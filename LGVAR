@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+
+# -*- coding: us-ascii -*-
+"""
+Created on Thurs April 3 10:56 2025
+Modified on Sun Jan 25 19:59 2026
+@Author: Feifei Zhou
+@Author_email: zhoufeifei@sjtu.edu.cn
+"""
+
+import json
+import sys
+import logging
+import shutil
+import argparse
+import subprocess
+from pathlib import Path
+from utils import process_paf, run_minimap, process_filtering, run_cluster_and_call, run_cigar_processing, run_dup_filtering, generate_vcf, split_vcf, integrate_results, plot, pair, reverse
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+def check_file_exists(file_path):
+    return Path(file_path).exists()
+
+def LGvar(args):
+    # make output directory
+    output_dir = Path("results")
+    output_dir.mkdir(exist_ok=True)
+
+    ## Check the alignments file, and then preprocess the alignments file
+    ## If there doesn't have paf file, then align first
+    logging.info("1.Filter")
+    if args.paf1:
+        output_file = f"align_hap1.flt.paf"
+        if not check_file_exists(output_file):
+            try:
+                process_paf(args.paf1, args.pairs1, "hap1")
+            except Exception as e:
+                logging.error(f"Error in process_paf for hap1: {e}")
+                sys.exit(1)
+    else:
+        paf_file = f"align_hap1.paf"
+        if not check_file_exists(paf_file):
+            try:
+                logging.info("Running minimap2 for hap1 alignment")
+                run_minimap(args.ref, args.hap1, "hap1", args.pairs1)
+            except Exception as e:
+                logging.error(f"Error in run_minimap for hap1: {e}")
+                sys.exit(1)
+
+    final_paf_file = f"align_hap1.final.paf"
+    if not check_file_exists(final_paf_file):
+        try:
+            process_filtering("hap1", args.mode, args.cluster, args.dellength, args.centromere, args.telomere)
+        except Exception as e:
+            logging.error(f"Error in process_filtering for hap1: {e}")
+            sys.exit(1)
+
+    if args.hap2:
+        if args.paf2:
+            output_file = f"align_hap2.flt.paf"
+            if not check_file_exists(output_file):
+                try:
+                    process_paf(args.paf2, args.pairs2, "hap2")
+                except Exception as e:
+                    logging.info(f"Error in process_paf for hap2: {e}")
+                    sys.exit(1)
+        else:
+            
+            paf_file = f"align_hap2.paf"
+            if not check_file_exists(paf_file):
+                try:
+                    logging.info("Running minimap2 for hap2 alignment")
+                    run_minimap(args.ref, args.hap2, "hap2", args.pairs2)
+                except Exception as e:
+                    logging.error(f"Error in run_minimap for hap2: {e}")
+                    sys.exit(1)
+
+        final_paf_file = f"align_hap2.final.paf"
+        if not check_file_exists(final_paf_file):
+            try:
+                process_filtering("hap2", args.mode, args.cluster, args.dellength, args.centromere, args.telomere)
+            except Exception as e:
+                logging.error(f"Error in process_filtering for hap2: {e}")
+                sys.exit(1)
+
+    ## SV calling
+    logging.info("2.Variants calling")
+    sdrall_file = Path(f"denSDRhap1")/"SDRall_final.txt"
+    if not check_file_exists(sdrall_file):
+        try:
+            run_cluster_and_call(args.ref, args.hap1, "hap1", args.invcluster, args.threads, args.chunk_size, args.distance, args.fraction)
+        except Exception as e:
+            logging.error(f"Error in run_cluster_and_call for hap1: {e}")
+            sys.exit(1)
+
+    if args.hap2:
+        sdrall_file = Path(f"denSDRhap2")/"SDRall_final.txt"
+        if not check_file_exists(sdrall_file):
+            try:
+                run_cluster_and_call(args.ref, args.hap2, "hap2", args.invcluster, args.threads, args.chunk_size, args.distance, args.fraction)
+            except Exception as e:
+                logging.error(f"Error in run_cluster_and_call for hap2: {e}")
+                sys.exit(1)
+
+    ## INDEL, SNV and SV calling from CIGAR
+    cigar_end_file = Path(f"half")/"hap1cigarend.txt"
+    if not check_file_exists(cigar_end_file):
+        try:
+            run_cigar_processing(args.ref, args.hap1, "hap1")
+        except Exception as e:
+            logging.error(f"Error in run_cigar_processing for hap1: {e}")
+            sys.exit(1)
+
+    if args.hap2:
+        cigar_end_file = Path(f"half")/"hap2cigarend.txt"
+        if not check_file_exists(cigar_end_file):
+            try:
+                run_cigar_processing(args.ref, args.hap2, "hap2")
+            except Exception as e:
+                logging.error(f"Error in run_cigar_processing for hap2: {e}")
+                sys.exit(1)
+
+    ## Dup filter
+    cigarout_file = Path(f"half")/"hap1cigarout.txt"
+    cigarend_file = Path(f"half")/"hap1cigarend.txt"
+    if not check_file_exists(cigarout_file):
+        try:
+            run_dup_filtering("hap1")
+        except Exception as e:
+            logging.error(f"Error in run_dup_filtering for hap1: {e}")
+            sys.exit(1)
+
+    if args.hap2:
+        cigarout_file = Path(f"half")/"hap2cigarout.txt"
+        cigarend_file = Path(f"half")/"hap2cigarend.txt"
+        if not check_file_exists(cigarout_file):
+            try:
+                run_dup_filtering("hap2")
+            except Exception as e:
+                logging.error(f"Error in run_dup_filtering for hap2: {e}")
+                sys.exit(1)
+
+    ## Generate vcf and bed
+    logging.info("3.Generate")
+    vcf_file = Path(f"results") / f"hap1cigarsdr.vcf"
+    if not check_file_exists(vcf_file):
+        try:
+            generate_vcf(args.ref, args.hap1, "hap1", args.variant_type)
+        except Exception as e:
+            logging.error(f"Error in generate_vcf for hap1: {e}")
+            sys.exit(1)
+
+    if args.hap2:
+        vcf_file = Path(f"results") / f"hap2cigarsdr.vcf"
+        if not check_file_exists(vcf_file):
+            try:
+                generate_vcf(args.ref, args.hap2, "hap2", args.variant_type)
+            except Exception as e:
+                logging.error(f"Error in generate_vcf for hap2: {e}")
+                sys.exit(1)
+
+    hap_dir = Path(f"hap1")
+    split_check_file = hap_dir / "sortindel.vcf.gz"  
+    if not check_file_exists(split_check_file):
+        try:
+            split_vcf("hap1", args.variant_type)
+        except Exception as e:
+            logging.error(f"Error in split_vcf for hap1: {e}")
+            sys.exit(1)
+
+    if args.hap2:
+        hap_dir = Path(f"hap2")
+        split_check_file = hap_dir / "sortindel.vcf.gz"  
+        if not check_file_exists(split_check_file):
+            try:
+                split_vcf("hap2", args.variant_type)
+            except Exception as e:
+                logging.error(f"Error in split_vcf for hap2: {e}")
+                sys.exit(1)
+
+    if args.hap2:
+        logging.info("4.Phenotype")
+        result_dir = Path("results")
+        vcf_files = list(result_dir.glob("sortLGvar_*.vcf"))
+        if not vcf_files:
+            try:
+                integrate_results("hap1", "hap2", args.sample_name, args.max_distance, args.small_distance, args.similarity_threshold, args.variant_type)
+            except Exception as e:
+                logging.error(f"Error in integrate_results: {e}")
+                sys.exit(1)
+    #remove_temp_files()
+
+def main():
+
+    ascii_art = [
+    r"\033[38;5;97m╔════════════════════════════════════════════════╗\033[0m",
+    r"\033[38;5;97m║                                                ║\033[0m",
+    r"\033[38;5;97m║   \033[38;5;205m██╗      ██████╗ ██╗   ██╗ █████╗ ██████╗\033[38;5;97m    ║\033[0m",
+    r"\033[38;5;97m║   \033[38;5;209m██║     ██╔════╝ ██║   ██║██╔══██╗██╔══██╗\033[38;5;97m   ║\033[0m",
+    r"\033[38;5;97m║   \033[38;5;214m██║     ██║  ███╗██║   ██║███████║██████╔╝\033[38;5;97m   ║\033[0m",
+    r"\033[38;5;97m║   \033[38;5;220m██║     ██║   ██║║██  ██╔╝██╔══██║██╔══██╗\033[38;5;97m   ║\033[0m",
+    r"\033[38;5;97m║   \033[38;5;226m███████╗╚██████╔╝╚╗ ██ ╔╝ ██║  ██║██║  ██║\033[38;5;97m   ║\033[0m",
+    r"\033[38;5;97m║   \033[38;5;46m╚══════╝ ╚═════╝  ╚════╝  ╚═╝  ╚═╝╚═╝  ╚═╝\033[38;5;97m   ║\033[0m",
+    r"\033[38;5;97m║                                                ║\033[0m",
+    r"\033[38;5;97m║    \033[38;5;51m                L G V A R                \033[38;5;97m   ║\033[0m",
+    r"\033[38;5;97m╚════════════════════════════════════════════════╝\033[0m"
+    ]
+
+    for line in ascii_art:
+        colored_line = line.replace(r"\033[", "\033[")
+        print(colored_line)
+
+    print("\nLarge-Scale Genetic VARiation caller\n")
+    #print("\nRun command:")
+    #print("LGVAR -r ref.fa -q1 hap1.fa -q2 hap2.fa -p1 hap1.paf -p2 hap2.paf -cp1 PTR_hap1_pair.tsv -cp2 PTR_hap2_pair.tsv -cen chm13_cen.tsv -telo chm13_telo.tsv -m cts -s PTR\n")
+    
+    class ElegantFormatter(argparse.HelpFormatter):
+        def __init__(self, prog):
+            super().__init__(prog, max_help_position=45, width=100)
+        def _format_action_invocation(self, action):
+            if not action.option_strings:
+                return super()._format_action_invocation(action)
+            return ', '.join(action.option_strings)
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", help="Some subcommands")
+
+    parser_run = subparsers.add_parser("run", help="Run SV identification", formatter_class=ElegantFormatter)
+    required = parser_run.add_argument_group("Input Files")
+    required.add_argument('-r', '--ref', required=True, help='Reference genome for variants calling')
+    required.add_argument('-q1', '--hap1', required=True, help='One query genome (Which is one haplotype of one species genome and needs to be scaffolded to chromosome level using RagTag to ensure better genome quality for more reliable variant calling results.)')
+    required.add_argument('-q2', '--hap2', help='Another query genome (Which is another haplotype of the species genome and needs to be scaffolded to chromosome level using RagTag to ensure better genome quality for more reliable variant calling results.)')
+    required.add_argument('-p1', '--paf1', help='Alignment of haplotype1 (Which contains the CIGAR infomation) [Recommend mapping tool: minimap2].')
+    required.add_argument('-p2', '--paf2', help='Alignment for haplotype2 (Which contains the CIGAR infomation) [Recommend mapping tool: minimap2].')
+    required.add_argument('-cp1', '--pairs1', required=True, help='Homologous chromsome pairs of query genome (hap1) and reference.')
+    required.add_argument('-cp2', '--pairs2', help='Homologous chromsome pairs of query genome (hap2) and reference.')
+    required.add_argument('-c', '--cluster', type=int, default=200000, help='Clustering parameter for filtering chaos alignments, where a smaller value results in a stricter filter [200000].')
+    required.add_argument('-dl', '--dellength', type=int, default=300000, help='A desired deletion length for alignments, where a larger value enforces a stricter filter [300000].')
+    required.add_argument('-inv', '--invcluster', type=int, default=700000, help='Clustering parameter for inversion calling [700000].')
+    required.add_argument('-cen', '--centromere', required=False, help='A centromere file which is used to filter out the alignment of complex regions that may not be well aligned [False].')
+    required.add_argument('-telo', '--telomere', required=False, help='A telomere file which is used to filter out the alignment of complex regions that may not be well aligned [False].')
+    required.add_argument('-m', '--mode', choices=['ctn', 'cts'], required=True,
+                        help='Analysis mode: ctn (do not remove centromere and telomere alignments) or cts (remove) [ctn].')
+    required.add_argument('-s', '--sample_name', type=str, default="SAMPLE", help='Sample name used to generate vcf.')
+    required.add_argument('-v', '--variant_type', type=str, default="all", help='Process line of each thread in inversion re-identification. [all]')
+    personal = parser_run.add_argument_group("Personalized arguments")
+    personal.add_argument('-d', '--distance', type=int, default=0, help='Parameters used to identify INS and DEL: Variations where the distance between the start and end positions of the REF or QUERY is less than (or equal with) d will be identified as SVs. A lower value indicates stricter criteria for SV identification [0bp].')
+    personal.add_argument('-t', '--threads', type=int, default=4, help='Multi threads for inversion re-identification from SDR. [4]')
+    personal.add_argument('-k', '--chunk_size', type=int, default=50, help='Process line of each thread in inversion re-identification. [50]')
+    personal.add_argument('-f', '--fraction', type=int, default=5, help='Specifies the minimum alignment threshold for the realignment step. The input integer is scaled by a factor of 0.1 to determine the actual percentage of bases required to align. For example, setting --fraction 5 corresponds to 50%%. [5]')
+    
+    ## Parameters for generating results
+    merge = parser_run.add_argument_group("Additional arguments")
+    merge.add_argument('-mdist', '--max_distance', type=int, default=500, 
+                       help='Max reference distance for two allele to merge [500bp].')
+    merge.add_argument('-sdist', '--small_distance', type=int, default=10, 
+                       help='Max reference distance for SSV (small variants) merge [10bp].')
+    merge.add_argument('-sim', '--similarity_threshold', type=float, default=0.8, 
+                       help='The similarity of variants, used to merge the variants of two haplotypes [0.8].')
+    
+    parser_plot = subparsers.add_parser("plot", help="Syntenic plot", formatter_class=ElegantFormatter)
+    parser_plot.add_argument("-p", "--paf", required=True, help="Input paf file")
+    parser_plot.add_argument("-o", "--output", default="alignment.pdf", help="Output PDF file name (default: alignments.pdf)")
+    parser_plot.add_argument("-m", "--minimum", type=int, default=50000, help="Filter alignments shorter than this length (default: 50000)")
+    parser_plot.add_argument("-d", "--distance", type=int, default=1000000, help="Params for merge alignments (default: 1000000)")
+    parser_plot.add_argument("-f", "--file", metavar="FILE", required=True, help="Chrom pair file for homologous chromosome alignments plot")
+    
+    parser_pair = subparsers.add_parser("pair", help="Generate homologous chromosome pairs", formatter_class=ElegantFormatter)
+    parser_pair.add_argument("-p", "--paf", required=True, help="Input paf file")
+    parser_pair.add_argument("-l", "--length", required=True, help="Minimum aligned length of one homologous pair")
+    parser_pair.add_argument("-o", "--output_prefix", required=True, help="Output prefix of chromosome pair")
+
+    parser_reverse = subparsers.add_parser("reverse", help="Reverse-complemented chromosomes", formatter_class=ElegantFormatter)
+    parser_reverse.add_argument("-p", "--paf", required=True, help="Input paf file")
+    parser_reverse.add_argument("-r", "--reverse", required=True, help="Chromosomes need to be reverse-complemented")
+    parser_reverse.add_argument("-g", "--genome", required=True, help="Original genome data")
+    parser_reverse.add_argument("-n", "--new_genome", required=True, help="New reverse-complemented genome data")
+
+    args = parser.parse_args()
+    if args.command == "run":
+        LGvar(args)
+    elif args.command == "plot":
+        plot(args.paf, args.output, args.minimum, args.distance, args.file)
+    elif args.command == "pair":
+        pair(args.paf, args.length, args.output_prefix)
+    elif args.command == "reverse":
+        reverse(args.paf, args.reverse, args.genome, args.new_genome)
+    else:
+        parser.print_help()
+
+if __name__ == "__main__":
+    main()
