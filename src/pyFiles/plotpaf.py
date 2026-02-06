@@ -191,89 +191,91 @@ def pairwise_alignment_plot(
     ax.text(2.25, -15000000, ','.join(q_order), ha='right', fontsize = 12)
     #ax.set_title(f"{r_order[0]} vs {q_order[0]}", pad=20)
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Visualize pairwise alignments from a PAF file.")
+def main():
+    parser = argparse.ArgumentParser(description="Visualize multiple queries against one reference in a single plot.")
     parser.add_argument("-p", "--paf", required=True, help="Input PAF file")
-    parser.add_argument("-o", "--output", default="alignments.pdf", help="Output PDF file name (default: alignments.pdf)")
-    parser.add_argument("-m", "--minimum", type=int, default=50000, help="Filter alignments shorter than this length (default: 50000)")
-    parser.add_argument("-d", "--distance", type=int, default=1000000, help="Params for merge alignments (default: 1000000)")
-    parser.add_argument("-f", "--file", required=True, help="Chrom pair file for homo chromosome alignments plot")
+    parser.add_argument("-o", "--output", default="alignments.pdf", help="Output PDF file name")
+    parser.add_argument("-m", "--minimum", type=int, default=50000, help="Filter alignments shorter than this length")
+    parser.add_argument("-d", "--distance", type=int, default=1000000, help="Params for merge alignments")
+    parser.add_argument("-f", "--file", required=True, help="Chrom pair file (Tab-separated: ref_chrom <tab> que1,que2...)")
     
     args = parser.parse_args()
+
+    ref_to_queries = {}
+    try:
+        with open(args.file, 'r') as f:
+            lines = f.readlines()[1:]
+            for line in lines:
+                parts = line.strip().split('\t')
+                if len(parts) < 2: continue
+                ref = parts[0].strip()
+                queries = [q.strip() for q in parts[1].split(',') if q.strip()]
+                ref_to_queries[ref] = queries
+
+        unique_refs = list(ref_to_queries.keys())
+        #print(f"Total reference chromosomes to plot: {len(unique_refs)}")
+    except Exception as e:
+        #print(f"Error parsing pair file: {e}")
+        return
     
     with open(args.paf, 'r') as f:
         line = f.readline().strip()
         num_columns = len(line.split('\t'))
-
-    predefined_columns = [
-        'query_name', 'query_length', 'query_start', 'query_end', 'strand',
-        'reference_name', 'reference_length', 'reference_start', 'reference_end',
-        'n_matches', 'alignment_block_length', 'mapped_length', 'score'
-    ]
-    
-    #additional_columns_needed = num_columns - len(predefined_columns)
-    additional_columns_needed = 11
-    additional_columns = [f'column{i+1}' for i in range(additional_columns_needed)]
-    
-    all_columns = predefined_columns + additional_columns
-    
-    df = pd.read_csv(args.paf, sep='\t', names=all_columns)
-    #df = df[(df['reference_name'] != "chrX")]
-    df = df[(df['reference_name'] != "chrY")]
-    df = df[(df['reference_name'] != "chrM")]
-
-    r_order = df['reference_name'].unique()
-    #print(r_order)
+    predefined_columns = ['query_name', 'query_length', 'query_start', 'query_end', 'strand',
+                          'reference_name', 'reference_length', 'reference_start', 'reference_end',
+                          'n_matches', 'alignment_block_length', 'mapped_length', 'score']
+    all_columns = predefined_columns + [f'col_{i}' for i in range(max(0, num_columns - len(predefined_columns)))]
+    df = pd.read_csv(args.paf, sep='\t', names=all_columns, low_memory=False)
 
     with PdfPages(args.output) as pdf:
         plots_per_page = 24
         rows_per_page = 3
         cols_per_page = 8
         
-        total_pages = (len(r_order) + plots_per_page - 1) // plots_per_page
+        total_pages = (len(unique_refs) + plots_per_page - 1) // plots_per_page
         
         for page in range(total_pages):
             fig, axes = plt.subplots(rows_per_page, cols_per_page, figsize=(40, 15))
-            fig.subplots_adjust(hspace=0.5, wspace=0.3)
-            
-            axes = axes.flatten()
- 
-            start_idx = page * plots_per_page
-            end_idx = min((page + 1) * plots_per_page, len(r_order))
-            
-            for i, ax in enumerate(axes):
-                idx = start_idx + i
-                if idx >= end_idx:
-                    ax.axis('off')
-                    continue
-                
-                chromosome_order = [f'chr{i}' for i in range(1, 23)]
-                order_dict = {chrom: idx for idx, chrom in enumerate(chromosome_order)}
-                sort_indices = np.argsort([order_dict.get(chrom, len(chromosome_order)) for chrom in r_order])
+            fig.subplots_adjust(hspace=0.4, wspace=0.3)
+            axes_flat = axes.flatten()
 
-                r_order_sorted = r_order[sort_indices]
-                chrom = r_order_sorted[idx]
-                chrom_df = df[df['reference_name'] == chrom]
+            for i in range(plots_per_page):
+                ax = axes_flat[i]
+                ref_idx = page * plots_per_page + i
                 
-                if chrom_df.empty:
-                    ax.axis('off')
-                    continue
+                if ref_idx < len(unique_refs):
+                    target_ref = unique_refs[ref_idx]
+                    target_queries = ref_to_queries[target_ref]
 
-                pairwise_alignment_plot(
-                    ax,
-                    chrom_df,
-                    reference_name_col='reference_name',
-                    reference_start_col='reference_start',
-                    reference_end_col='reference_end',
-                    query_name_col='query_name',
-                    query_start_col='query_start',
-                    query_end_col='query_end',
-                    strand_col='strand',
-                    min_alignment_length=args.minimum,
-                    merge=True,
-                    mxm_distance=args.distance
-                )
+                    chrom_df = df[(df['reference_name'] == target_ref) & 
+                                  (df['query_name'].isin(target_queries))]
+                    
+                    if not chrom_df.empty:
+
+                        pairwise_alignment_plot(
+                            ax,
+                            chrom_df,
+                            reference_name_col='reference_name',
+                            reference_start_col='reference_start',
+                            reference_end_col='reference_end',
+                            query_name_col='query_name',
+                            query_start_col='query_start',
+                            query_end_col='query_end',
+                            strand_col='strand',
+                            min_alignment_length=args.minimum,
+                            merge=True,
+                            mxm_distance=args.distance
+                        )
+                        ax.set_title(f"Ref: {target_ref}\nQueries: {', '.join(target_queries[:2])}...", fontsize=10)
+                    else:
+                        ax.text(0.5, 0.5, f"No Data for {target_ref}", ha='center', va='center')
+                        ax.axis('off')
+                else:
+                    ax.axis('off')
             
             pdf.savefig(fig, bbox_inches='tight')
             plt.close(fig)
+
+if __name__ == '__main__':
+    main())
 
