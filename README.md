@@ -1,4 +1,5 @@
 # LGvar: Large-scale Genomic VARiation
+[![Conda version](https://img.shields.io/badge/conda-v1.1.0-green)](https://anaconda.org/channels/zhoufeifei/packages/lgvar/overview)  [![Appatiner Image Version](https://img.shields.io/badge/singularity-v1.1.0-blue)](https://cloud.sylabs.io/library/feifeizhou/tool/lgvar) [![License](https://img.shields.io/badge/license-MIT-yellow)](https://github.com/YafeiMaoLab/LGvar/blob/main/LICENSE)  [![release](https://img.shields.io/badge/releases-Feb%202026-purple)](https://github.com/YafeiMaoLab/LGvar/releases/tag/v1.1.0)
 
 **LGvar** is a comprehensive toolset designed for large-scale structural variant (SV) detection based on genome assemblies. It excels in **cross-species variant identification**, particularly demonstrating superior performance in **inversion detection** compared to existing tools.
 
