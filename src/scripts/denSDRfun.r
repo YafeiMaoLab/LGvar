@@ -1032,72 +1032,237 @@ insertsmall<-function(endcluster2before,storesmall,orientid){
   return(storesmall)
 }
 
-smalltransf<-function(endcluster0){
-  x=table(endcluster0$cluster)
-  thereshod<-quantile(sort(as.vector(x)),0.8)/5
-  dellist<-c()
-  for(k in names(x)[x<=thereshod]){
-    if(k==1){
+detect_translocations <- function(endcluster0, 
+                                  large_row_quantile = 0.8, 
+                                  row_factor = 5, 
+                                  max_span = 2e6, 
+                                  ratio_threshold = 20,
+                                  min_query_gap = 50000,
+                                  check_both_sides = TRUE,
+                                  inversion_gap_threshold = 200000) {
+  
+  # Ensure data is sorted by reference start
+  endcluster0 <- endcluster0 %>% arrange(ref_start, query_chr)
+  
+  # Summarize each cluster
+  cluster_summary <- endcluster0 %>%
+    group_by(cluster) %>%
+    summarise(
+      n_rows = n(),
+      ref_min = min(ref_start),
+      ref_max = max(ref_end),
+      ref_span = ref_max - ref_min,
+      query_min = min(pmin(query_start, query_end)),
+      query_max = max(pmax(query_start, query_end)),
+      query_span = query_max - query_min,
+      query_chr = unique(query_chr)[1],
+      orient_major = names(which.max(table(orient))),
+      .groups = 'drop'
+    )
+
+  # Define large clusters: those with many rows OR large span
+  row_thresh <- quantile(cluster_summary$n_rows, large_row_quantile) / row_factor
+  span_thresh <- max_span
+  
+  large_clusters <- cluster_summary %>%
+    filter(n_rows > row_thresh | ref_span > span_thresh) %>%
+    pull(cluster)
+  
+  # All other clusters are candidates
+  small_clusters <- cluster_summary %>%
+    filter(!cluster %in% large_clusters) %>%
+    pull(cluster)
+  
+  if (length(small_clusters) == 0) {
+    return(list(tran = NULL, endcluster0 = endcluster0, tranbefore = NULL))
+  }
+  
+  # Get order of clusters along reference
+  cluster_order <- cluster_summary %>% arrange(ref_min) %>% pull(cluster)
+  
+  # Prepare results
+  dellist <- c()
+  for (k in small_clusters) {
+    small_info <- cluster_summary %>% filter(cluster == k)
+    small_ref_min <- small_info$ref_min
+    small_ref_max <- small_info$ref_max
+    small_query_min <- small_info$query_min
+    small_query_max <- small_info$query_max
+    small_query_chr <- small_info$query_chr
+    small_orient <- small_info$orient_major
+
+    idx <- which(cluster_order == k)
+    
+    # Check all neighbors (previous and next)
+
+    candidates <- c()    
+    if (idx > 1) {
+      candidates <- c(candidates, cluster_order[1:(idx-1)])
+    }    
+    if (idx < length(cluster_order)) {
+      candidates <- c(candidates, cluster_order[(idx+1):length(cluster_order)])
+    }
+ 
+    if (length(candidates) == 0) {      
       next
     }
-    if(max(endcluster0[endcluster0$cluster==k,]$ref_end)-min(endcluster0[endcluster0$cluster==k,]$ref_start)>2000000){
+
+    ##Filter candidates    
+    span_threshold <- 1e6  
+    valid_neighbors_df <- cluster_summary %>%
+      filter(cluster %in% candidates,
+             ref_span > span_threshold,
+             query_span > span_threshold)
+
+    if (nrow(valid_neighbors_df) == 0) {
+      candidates <- c() 
       next
     }
-    numberslist<-rle(endcluster0$cluster)$values
-    biglist<-names(x)[x>thereshod]
-    tranloc<-which(numberslist==k)
-    bigloc<-which(numberslist %in% biglist)
-    positive_positions <- which(min(tranloc)-bigloc > 0)
-    aclus<-bigloc[positive_positions][which.min(min(tranloc)-bigloc[positive_positions])]
-    positive_positions <- which(bigloc-max(tranloc) > 0)
-    bclus<-bigloc[positive_positions][which.min(bigloc[positive_positions]-min(tranloc))]
-    s<-numberslist[aclus]
-    e<-numberslist[bclus]
-    a<-which(endcluster0$cluster==k)
-    loc1<-max(intersect(1:min(a), which(endcluster0$cluster==s)))
-    loc2<-min(intersect(max(a):dim(endcluster0)[1], which(endcluster0$cluster==e)))
-    x1<-abs(endcluster0[min(a),]$query_start-endcluster0[loc1,]$query_start)
-    x2<-abs(endcluster0[max(a),]$query_end-endcluster0[loc2,]$query_end)
-    x3<-abs(endcluster0[min(a),]$ref_start-endcluster0[loc1,]$ref_end)
-    x4<-abs(endcluster0[max(a),]$ref_end-endcluster0[loc2,]$ref_start)
-    if(unique(is.na(x2)) |length(x2)!=1){
-      if(x1/x3>20 ){
-        dellist<-append(dellist,k)
-      }
+
+    ##Select the nearest
+    final_candidates <- c()
+
+    front_neighbors <- valid_neighbors_df %>% filter(cluster < k)
+    if (nrow(front_neighbors) > 0) {
+      closest_front <- front_neighbors %>% slice_max(cluster) %>% pull(cluster) 
+      final_candidates <- c(final_candidates, closest_front)
     }
-    if( unique(is.na(x1)) |length(x1)!=1){
-      if(x2/x4>20){
-        dellist<-append(dellist,k)
-      }
+
+    back_neighbors <- valid_neighbors_df %>% filter(cluster > k)
+    if (nrow(back_neighbors) > 0) {
+      closest_back <- back_neighbors %>% slice_min(cluster) %>% pull(cluster) 
+      final_candidates <- c(final_candidates, closest_back)
     }
-    if(unique(!is.na(x1)) & unique(!is.na(x2)) &length(x2)==1  &length(x1)==1){
-      if(x1/x3>20 |x2/x4>20){
-        dellist<-append(dellist,k)
+
+    candidates <- final_candidates
+
+    if (length(candidates) == 0) {            
+      next
+    }
+      
+    flag <- FALSE
+    
+    for (neighbor in candidates) {
+      neighbor_info <- cluster_summary %>% filter(cluster == neighbor)
+      neighbor_orient <- neighbor_info$orient_major
+      
+      # For inversion: only flag if query gap is significantly large
+      is_inversion_case <- (small_orient == "-" | neighbor_orient == "-")
+      # Calculate reference gap
+      ref_gap <- NA
+      if (neighbor_info$ref_max < small_ref_min) {
+        ref_gap <- small_ref_min - neighbor_info$ref_max
+      } else if (neighbor_info$ref_min > small_ref_max) {
+        ref_gap <- neighbor_info$ref_min - small_ref_max
+      } else {
+        ref_gap <- 0
+      }
+      
+      # Calculate query gap
+      query_gap <- NA
+      if (neighbor_info$query_max < small_query_min) {
+        query_gap <- small_query_min - neighbor_info$query_max
+      } else if (neighbor_info$query_min > small_query_max) {
+        query_gap <- neighbor_info$query_min - small_query_max
+      } else {
+        query_gap <- 0
+      }
+
+      # Different query_chr - strong indicator of translocation
+      if (neighbor_info$query_chr != small_query_chr) {
+        if (query_gap >= min_query_gap | ref_gap > 0) {
+          flag <- TRUE
+          break
+        }
+        if (neighbor_info$ref_min < small_ref_min && neighbor_info$ref_max > small_ref_max) {
+          flag <- TRUE
+          break
+        }
+        next
+      }
+      
+      # Same query_chr with inversion: require larger gap to be called trans
+      if (is_inversion_case) {
+        # For inversion, require query_gap to be larger than threshold
+        if (!is.na(query_gap) && query_gap > inversion_gap_threshold) {
+          flag <- TRUE
+          break
+        }
+        # Also check ratio for inversion
+        if (!is.na(ref_gap) && ref_gap > 0 && !is.na(query_gap) && query_gap / ref_gap > ratio_threshold * 2) {
+          flag <- TRUE
+          break
+        }
+        next
+      }
+      
+      # Same query_chr, both + orientation: check ratio
+      if (!is.na(ref_gap) && ref_gap > 0 && !is.na(query_gap)) {
+        ratio <- query_gap / ref_gap
+        if (ratio > ratio_threshold) {
+          flag <- TRUE
+          break
+        }
+      }
+      
+      # Check if small cluster is surrounded by large clusters
+      if (check_both_sides && neighbor %in% large_clusters && !is.na(ref_gap) && ref_gap > 0) {
+        has_other_large <- FALSE
+        for (other in candidates) {
+          if (other != neighbor && other %in% large_clusters) {
+            other_info <- cluster_summary %>% filter(cluster == other)
+            other_ref_gap <- NA
+            if (other_info$ref_max < small_ref_min) {
+              other_ref_gap <- small_ref_min - other_info$ref_max
+            } else if (other_info$ref_min > small_ref_max) {
+              other_ref_gap <- other_info$ref_min - small_ref_max
+            }
+            if (!is.na(other_ref_gap) && other_ref_gap > 0) {
+              has_other_large <- TRUE
+              break
+            }
+          }
+        }
+        if (has_other_large && query_gap > min_query_gap) {
+          flag <- TRUE
+          break
+        }
       }
     }
     
-  }
-  if(length(dellist)!=0){
-    tran<-endcluster0[endcluster0$cluster %in% dellist,]
-    tranbefore<-tran
-    tran<-tran %>% group_by(cluster)%>%  
-      summarise(ref_chr=ref_chr,ref_start=min(ref_start),
-                ref_end=max(ref_end),
-                query_chr=query_chr,
-                query_starttem=min(pmin(query_end,query_start)),
-                query_endtem=max(pmax(query_start,query_end)),
-                (names(which.max(table(orient))))) 
-    colnames(tran)[6]<-"query_start"
-    colnames(tran)[7]<-"query_end"
-    endcluster0<-endcluster0[!endcluster0$cluster %in% dellist,]
-    colnames(tran)[8]<-"orient"
-    return(list(tran=distinct(tran),endcluster0=endcluster0,tranbefore=tranbefore))
-  }
-  else{
-    return(list(tran=NULL,endcluster0=endcluster0))
+    if (flag) {
+      dellist <- c(dellist, k)
+    }
   }
   
-}
+  if (length(dellist) == 0) {
+    return(list(tran = NULL, endcluster0 = endcluster0, tranbefore = NULL))
+  }
+  
+  # Extract translocated clusters
+  tran_rows <- endcluster0 %>% filter(cluster %in% dellist)
+  
+  # Summarize each translocated cluster
+  tran_summary <- tran_rows %>%
+    group_by(cluster) %>%
+    summarise(
+        ref_chr = unique(ref_chr)[1],
+        ref_start = min(ref_start),
+        ref_end = max(ref_end),
+        query_chr = unique(query_chr)[1],
+        query_start = min(pmin(query_start, query_end)),
+        query_end = max(pmax(query_start, query_end)),
+        orient = names(which.max(table(orient))),
+        .groups = 'drop'
+    ) %>%
+    distinct()
+  
+  # Remove translocated clusters from endcluster0
+  endcluster0_filtered <- endcluster0 %>% filter(!cluster %in% dellist)
+  
+  return(list(tran = tran_summary, endcluster0 = endcluster0_filtered, tranbefore = tran_rows))
+}                             
+
 clusterall<-function(data){
   data<-data %>% group_by(cluster)%>%  
     summarise(ref_chr=ref_chr,ref_start=min(ref_start),
