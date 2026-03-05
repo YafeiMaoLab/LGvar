@@ -50,9 +50,9 @@ with open(args.o, 'w') as file:
 	## INS
 	ins_rows = df[df.iloc[:, 6] == 'INS']
 	ins_rows.to_csv('temp/ins.csv', sep='\t', header=None, index=False)
-	subprocess.run(f"awk '{{print $4,$5-1,$6,\"\",\"\",$8}}' temp/ins.csv|tr ' ' '\t' > temp/query.bed", shell=True)
+	subprocess.run(f"awk '{{if($5==0) print $4,$5,$6,\"\",\"\",$8; else print $4,$5-1,$6,\"\",\"\",$8}}' temp/ins.csv|tr ' ' '\t' > temp/query.bed", shell=True)
 	subprocess.run(f"bedtools getfasta -fi {QUERY} -bed temp/query.bed -s -fo temp/que.fa", shell=True)
-	subprocess.run(f"awk '{{print $1,$2-1,$3}}' temp/ins.csv|tr ' ' '\t'  > temp/ref.bed", shell=True)  
+	subprocess.run(f"awk '{{if($2==0) print $1,$2,$3; else print $1,$2-1,$3}}' temp/ins.csv|tr ' ' '\t'  > temp/ref.bed", shell=True)  
 	subprocess.run(f"bedtools getfasta -fi {REF} -bed temp/ref.bed -fo temp/ref.fa", shell=True)
 	refsequences = {record.id: record.seq for record in SeqIO.parse('temp/ref.fa', 'fasta')}
 	querysequences = {record.id: record.seq for record in SeqIO.parse('temp/que.fa', 'fasta')}
@@ -65,8 +65,10 @@ with open(args.o, 'w') as file:
 		que_end = row[5]
 		lenall = row[9]
 		minus=row[7]
-		selected_reffa = str(refsequences[ref_chr+":"+str(ref_start-1)+"-"+str(ref_end)])
-		selected_quefa = str(querysequences[que_chr+":"+str(que_start-1)+"-"+str(que_end)+"("+minus+")"])
+		ref_start_bed = ref_start if ref_start == 0 else ref_start - 1
+		que_start_bed = que_start if que_start == 0 else que_start - 1
+		selected_reffa = str(refsequences[ref_chr+":"+str(ref_start_bed)+"-"+str(ref_end)])
+		selected_quefa = str(querysequences[que_chr+":"+str(que_start_bed)+"-"+str(que_end)+"("+minus+")"])
 		three=ref_chr+"-"+str(ref_start)+"-"+"INS"+"-"+str(lenall)
 		emp="."
 		alllen="ID="+three+";"+"SVTYPE=INS;SVLEN="+str(lenall)+";TIG_REGION="+que_chr+":"+str(que_start)+"-"+str(que_end)+";"+"QUERY_STRAND=+,+"
@@ -76,9 +78,9 @@ with open(args.o, 'w') as file:
 	## DEL
 	del_rows = df[df.iloc[:, 6] == 'DEL']
 	del_rows.to_csv('temp/del.csv', sep='\t', header=None, index=False)
-	subprocess.run(f"awk '{{print $4,$5-1,$6,\"\",\"\",$8}}' temp/del.csv|tr ' ' '\t' > temp/query.bed", shell=True)
+	subprocess.run(f"awk '{{if($5==0) print $4,$5,$6,\"\",\"\",$8; else print $4,$5-1,$6,\"\",\"\",$8}}' temp/del.csv|tr ' ' '\t' > temp/query.bed", shell=True)
 	subprocess.run(f"bedtools getfasta -fi {QUERY} -bed temp/query.bed -s -fo temp/que.fa", shell=True)
-	subprocess.run(f"awk '{{print $1,$2-1,$3}}' temp/del.csv|tr ' ' '\t'  > temp/ref.bed", shell=True)  
+	subprocess.run(f"awk '{{if($2==0) print $1,$2,$3; else print $1,$2-1,$3}}' temp/del.csv|tr ' ' '\t'  > temp/ref.bed", shell=True)  
 	subprocess.run(f"bedtools getfasta -fi {REF} -bed temp/ref.bed -fo temp/ref.fa", shell=True)
 	refsequences = {record.id: record.seq for record in SeqIO.parse('temp/ref.fa', 'fasta')}
 	querysequences = {record.id: record.seq for record in SeqIO.parse('temp/que.fa', 'fasta')}
@@ -91,6 +93,8 @@ with open(args.o, 'w') as file:
 		que_end = row[5]
 		lenall = row[8]
 		minus=row[7]
+		ref_start_bed = ref_start if ref_start == 0 else ref_start - 1
+		que_start_bed = que_start if que_start == 0 else que_start - 1
 		selected_reffa = str(refsequences[ref_chr+":"+str(ref_start-1)+"-"+str(ref_end)])
 		selected_quefa = str(querysequences[que_chr+":"+str(que_start-1)+"-"+str(que_end)+"("+minus+")"])
 		three=ref_chr+"-"+str(ref_start)+"-"+"DEL"+"-"+str(lenall)
