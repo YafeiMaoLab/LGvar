@@ -37,60 +37,6 @@ for(chrid in sorted_chrnames){
   storehighdup_sdr<- data.frame(ref_chr=0,ref_start = 0, ref_end = 0,query_chr=0,query_start = 0, query_end = 0,anno='ss')
   
   list<-c()
-
-  ## 1.Cluster，remove translocation in sytenic region
-  endcluster0<-split_region(pos.chr,0,cluster0paras)
-  
-  aftertrans<-detect_translocations(endcluster0)
-
-  for(i in unique((aftertrans$tranbefore)$cluster)){
-    a<-aftertrans$tranbefore[(aftertrans$tranbefore)$cluster==i,]
-    a$cluster<-as.character(1:dim(a)[1])
-    if(sum(a$orient == "-") > 0.5* nrow(a)){
-      reverse_end<-reverse.region(a,chrid,3,"init")
-    }
-    if(sum(a$orient == "+") > 0.5 * nrow(a) |sum(a$orient == "-") == 0.5 * nrow(a)){
-      reverse_end<-reverse.region(a,chrid,2,"init")
-    }
-    if(exists("reverse_end")){
-      middle<-reverse_end$reverse
-      if(nrow(middle)!=0){
-        middle<-intersect.unit(middle,unique(middle$query_chr)) 
-      }
-      if(sum(a$orient == "+") > 0.5 * nrow(a) & nrow(middle)!=0){
-        middle$orient<-"+"
-      }
-      if(sum(a$orient == "-") > 0.5 * nrow(a) & nrow(middle)!=0){
-        middle$orient<-"-"
-      }
-      if(sum(a$orient == "-") == 0.5 * nrow(a) & nrow(middle)!=0){
-        middle$orient<-"no"
-      }
-      
-      storesmall<-rbind(storesmall,middle)
-      minusmiddle<-reverse_end$reverse[reverse_end$reverse$ref_start<=reverse_end$reverse$ref_end & reverse_end$reverse$query_start<=reverse_end$reverse$query_end,]
-      if(nrow(minusmiddle)!=0){
-        minusmiddle$orient<-"no"
-      }
-      
-      storesmall<-rbind(storesmall,minusmiddle)
-      storesmall<-distinct(storesmall)
-    }
-  }
-  if(length(aftertrans$tran)!=0){
-    smalltrans<-rbind(smalltrans,aftertrans$tran)
-  }
-  if(!is.null(aftertrans$tran) && !isEmpty(aftertrans$tran)){
-    inversion<-rbind(inversion,aftertrans$tranbefore[aftertrans$tranbefore$orient=="-",colnames(inversion)])
-    transdup<-transduplication_extract(endcluster0,aftertrans$tran)
-    if(nrow(transdup)!=0){
-      duplication<-rbind(duplication,transdup[,colnames(duplication)])
-    }
-    
- }
-  
-  endcluster0<-aftertrans$endcluster0
-  
   dupset<-highdupregion(pos.chr)
   if(length(dupset)!=1 ||length(dupset[[1]]>=5)){
     for (dupsetname in names(dupset)){
@@ -184,6 +130,58 @@ for(chrid in sorted_chrnames){
     }
   }
   storehighdup_sdr<-distinct(storehighdup_sdr)
+  ## 1.Cluster，remove translocation in sytenic region
+  endcluster0<-split_region(pos.chr,0,cluster0paras)
+  
+  aftertrans<-detect_translocations(endcluster0)
+
+  for(i in unique((aftertrans$tranbefore)$cluster)){
+    a<-aftertrans$tranbefore[(aftertrans$tranbefore)$cluster==i,]
+    a$cluster<-as.character(1:dim(a)[1])
+    if(sum(a$orient == "-") > 0.5* nrow(a)){
+      reverse_end<-reverse.region(a,chrid,3,"init")
+    }
+    if(sum(a$orient == "+") > 0.5 * nrow(a) |sum(a$orient == "-") == 0.5 * nrow(a)){
+      reverse_end<-reverse.region(a,chrid,2,"init")
+    }
+    if(exists("reverse_end")){
+      middle<-reverse_end$reverse
+      if(nrow(middle)!=0){
+        middle<-intersect.unit(middle,unique(middle$query_chr)) 
+      }
+      if(sum(a$orient == "+") > 0.5 * nrow(a) & nrow(middle)!=0){
+        middle$orient<-"+"
+      }
+      if(sum(a$orient == "-") > 0.5 * nrow(a) & nrow(middle)!=0){
+        middle$orient<-"-"
+      }
+      if(sum(a$orient == "-") == 0.5 * nrow(a) & nrow(middle)!=0){
+        middle$orient<-"no"
+      }
+      
+      storesmall<-rbind(storesmall,middle)
+      minusmiddle<-reverse_end$reverse[reverse_end$reverse$ref_start<=reverse_end$reverse$ref_end & reverse_end$reverse$query_start<=reverse_end$reverse$query_end,]
+      if(nrow(minusmiddle)!=0){
+        minusmiddle$orient<-"no"
+      }
+      
+      storesmall<-rbind(storesmall,minusmiddle)
+      storesmall<-distinct(storesmall)
+    }
+  }
+  if(length(aftertrans$tran)!=0){
+    smalltrans<-rbind(smalltrans,aftertrans$tran)
+  }
+  if(!is.null(aftertrans$tran) && !isEmpty(aftertrans$tran)){
+    inversion<-rbind(inversion,aftertrans$tranbefore[aftertrans$tranbefore$orient=="-",colnames(inversion)])
+    transdup<-transduplication_extract(endcluster0,aftertrans$tran)
+    if(nrow(transdup)!=0){
+      duplication<-rbind(duplication,transdup[,colnames(duplication)])
+    }
+    
+ }
+  
+  endcluster0<-aftertrans$endcluster0
  
   ## 2.extract inversion
 
