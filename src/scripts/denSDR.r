@@ -19,9 +19,11 @@ chrnames <- unique(pos$ref_chr)
 numeric_part <- as.numeric(gsub("\\D", "", chrnames))
 sorted_chrnames <- chrnames[order(numeric_part)] 
 
-cluster0paras<-700000  
-cluster1paras<-700000
-invparas <- args[5]
+# cluster0paras<-700000  
+# cluster1paras<-700000
+cluster0paras<-args[5]  
+cluster1paras<-args[5]
+invparas <- args[6]
 
 for(chrid in sorted_chrnames){
 
@@ -171,9 +173,10 @@ for(chrid in sorted_chrnames){
   }
   if(length(aftertrans$tran)!=0){
     smalltrans<-rbind(smalltrans,aftertrans$tran)
+    smalltrans <- smalltrans[smalltrans$orient=="+",]
   }
   if(!is.null(aftertrans$tran) && !isEmpty(aftertrans$tran)){
-    inversion<-rbind(inversion,aftertrans$tranbefore[aftertrans$tranbefore$orient=="-",colnames(inversion)])
+    inversion<-rbind(inversion,aftertrans$tran[aftertrans$tran$orient=="-",colnames(inversion)])
     transdup<-transduplication_extract(endcluster0,aftertrans$tran)
     if(nrow(transdup)!=0){
       duplication<-rbind(duplication,transdup[,colnames(duplication)])
@@ -182,7 +185,7 @@ for(chrid in sorted_chrnames){
  }
   
   endcluster0<-aftertrans$endcluster0
- 
+
   ## 2.extract inversion
 
   endcluster1<-split_region(endcluster0,1,cluster1paras)
@@ -225,22 +228,10 @@ for(chrid in sorted_chrnames){
     invcluster[invcluster$cluster==miusclu,]
   }
 
-  reverse_ranges <- invcluster %>%
-    filter(orient == "-") %>%
-    group_by(cluster) %>%
-    summarise(start_min = min(ref_start), end_max = max(ref_end), .groups = "drop")
+  INV_INV <- call_nested_inversion(invcluster,chrid)
 
-  forward_ranges <- invcluster %>% filter(orient == "+")
-  
-  INV_INV <- forward_ranges %>%
-    rowwise() %>%
-    filter(any(reverse_ranges$start_min <= ref_start & reverse_ranges$end_max >= ref_end)) %>%
-    ungroup()
-  
-  INV_INV$anno <- "INV-INV"
-  INV_INV <- INV_INV[,c(1,2,3,5,6,7,11,9)]
-
-  inver<-inversion.extract(invcluster,chrid) 
+  refine_breakpoints <- as.logical(args[8]) 
+  inver <- inversion.extract(invcluster, chrid, refine_breakpoints = refine_breakpoints)
   if (!is.null(inver) && nrow(inver) != 0) {
     colnames(inver)[8]="orient"
   } else {
@@ -500,76 +491,158 @@ for(chrid in sorted_chrnames){
   cat("second cluster:INV num",dim(inversion)[1],"\n")
   cat("second cluster:dup num",dim(duplication)[1],"\n")
   cat("second cluster:trans num",dim(smalltrans)[1],"\n")
-  inversion$anno<-"INV"
-  inversion$orient<-"-"
-  duplication<-distinct(duplication)
-  duplication$anno<-"DUP"
-  duplication$orient<-"no"
-  smalltrans$anno<-"TRANS"
-  smalltrans$orient<-"no"
-  storesmall$anno<-"SDR_NM"
-  store$orient<-"no"
-  storehighdup_sdr$orient<-"no"
-  duplication<-duplication[,colnames(store)]
-  smalltrans<-smalltrans[,colnames(store)]
-  storesmall<-storesmall[-1,colnames(store)]
-  store<-store[store$ref_chr!=0,]
-  storehighdup_sdr<-storehighdup_sdr[storehighdup_sdr$ref_chr!=0,]
-  all<-rbind(store,inversion[-1,],distinct(duplication[-1,]),smalltrans[-1,],storesmall,storehighdup_sdr,INV_INV)
-  all<-all[order(all$ref_start),]
-  distance <- args[6]
-  for (chr_child in unique(all$query_chr[all$query_chr!=0])){
-    assign(chr_child,endfilter(all[all$query_chr==chr_child,],chrid,chr_child,distance))
-    
-  }
-  if(nrow(all)==0){
-    next
-  }
-  data<-docall(all)
-  if(length(which(data$ref_start>data$ref_end))!=0){
-    data<-data[-which(data$ref_start>data$ref_end),]
-  }
-  data<-distinct(data)
-  if(length(which(data$reflen==0 & data$querylen==0))!=0){
-    data<-data[-which(data$reflen==0 & data$querylen==0),]
-  }
-  COMPLEX<-data[data$anno=="COMPLEX",]
-  if(nrow(data[data$anno=="COMPLEX",])!=0){
-    data<-data[-which(data$anno=="COMPLEX"),]
-    newcomplex<-complexinte(COMPLEX)
-    newcomplex$anno<-"SDR_COMPLEX"
-    newcomplex$orient<-"no"
-    newcomplex$reflen<-newcomplex$ref_end-newcomplex$ref_start
-    newcomplex$querylen<-newcomplex$query_end-newcomplex$query_start
-    data<-rbind(data,newcomplex[,colnames(data)])
-  }
 
-  
-data<-data[data$ref_start<=data$ref_end & data$query_start<=data$query_end,]
-if(nrow(highdupall[highdupall$ref_chr!=0,])!=0){
-  hidup<-highdupall[highdupall$ref_chr!=0,]
-  hidup$query_chr=""
-  hidup$query_start=""
-  hidup$query_end=""
-  hidup$anno="high-dup"
-  hidup$orient=""
-  hidup$reflen=""
-  hidup$querylen=""
-  data<-rbind(data,hidup)
-}
-if(nrow(data[data$ref_start==0 & data$ref_end==0,])!=0){
-  data<-data[!(data$ref_start==0 & data$ref_end==0),]
-}
-if(nrow(data[data$query_start==0 & data$query_end==0,])!=0){
-  data<-data[!(data$query_start==0 & data$query_end==0),]
-}
-numeric_cols <- c("ref_start", "ref_end", "query_start", "query_end", "reflen", "querylen")
-#data[numeric_cols] <- lapply(data[numeric_cols], function(x) format(x, scientific = FALSE, trim = TRUE, , justify = "none"))
-data[numeric_cols] <- lapply(data[numeric_cols], function(x) {
-  x <- as.numeric(x)
-  if(any(is.na(x))) warning("NA appears in column！")
-  format(x, scientific = FALSE, trim = TRUE, digits = 22)
-})
-write.table(data, paste(args[4],chrid,"end.tsv",sep = ""), quote = FALSE, sep = "\t", row.names = FALSE)
+	final_columns_order <- c(
+		"ref_chr", "ref_start", "ref_end", 
+		"query_chr", "query_start", "query_end", 
+		"anno", "orient", "reflen", "querylen"
+	)
+
+	align_and_sanitize <- function(df, df_name, force_anno = NULL, force_orient = NULL, remove_first_row = FALSE) {
+		if (!exists(df_name, envir = .GlobalEnv) || is.null(df) || nrow(df) == 0) {
+			empty_df <- as.data.frame(matrix(ncol = length(final_columns_order), nrow = 0))
+			colnames(empty_df) <- final_columns_order
+			return(empty_df)
+		}
+		if (remove_first_row) {
+			if (nrow(df) > 1) {
+				df <- df[-1, , drop = FALSE]
+			} else {
+				empty_df <- as.data.frame(matrix(ncol = length(final_columns_order), nrow = 0))
+				colnames(empty_df) <- final_columns_order
+				return(empty_df)
+			}
+		}
+		for (col in final_columns_order) {
+			if (!col %in% colnames(df)) {
+				df[[col]] <- NA
+			}
+		}
+		if (!is.null(force_anno)) {
+			df[["anno"]] <- force_anno
+		}
+		if (!is.null(force_orient)) {
+			df[["orient"]] <- force_orient
+		}
+		df_cleaned <- df[, final_columns_order, drop = FALSE]
+		return(df_cleaned)
+	}
+
+	if (exists("store") && !is.null(store) && nrow(store) > 0) {
+		store <- store[store$ref_chr != "0" & !is.na(store$ref_chr), , drop = FALSE]
+		store <- align_and_sanitize(store, "store", force_orient = "no")
+	} else {
+		store <- align_and_sanitize(NULL, "store")
+	}
+
+	inversion <- align_and_sanitize(inversion, "inversion", force_anno = "INV", force_orient = "-", remove_first_row = TRUE)
+
+	if (exists("duplication") && !is.null(duplication) && nrow(duplication) > 0) {
+		duplication_dup <- distinct(duplication)
+		duplication <- align_and_sanitize(duplication_dup, "duplication_dup", force_anno = "DUP", remove_first_row = TRUE)
+	} else {
+		duplication <- align_and_sanitize(NULL, "duplication")
+	}
+
+	smalltrans <- align_and_sanitize(smalltrans, "smalltrans", force_anno = "TRANS", force_orient = "no", remove_first_row = TRUE)
+
+	storesmall <- align_and_sanitize(storesmall, "storesmall", force_anno = "SDR_NM", remove_first_row = TRUE)
+
+	if (exists("storehighdup_sdr") && !is.null(storehighdup_sdr) && nrow(storehighdup_sdr) > 0) {
+		storehighdup_sdr <- storehighdup_sdr[storehighdup_sdr$ref_chr != "0" & !is.na(storehighdup_sdr$ref_chr), , drop = FALSE]
+		storehighdup_sdr <- align_and_sanitize(storehighdup_sdr, "storehighdup_sdr", force_orient = "no")
+	} else {
+		storehighdup_sdr <- align_and_sanitize(NULL, "storehighdup_sdr")
+	}
+
+	INV_INV <- align_and_sanitize(INV_INV, "INV_INV")
+
+	all <- rbind(store, inversion, duplication, smalltrans, storesmall, storehighdup_sdr, INV_INV)
+	all <- distinct(all)
+
+	if (nrow(all) == 0) {
+		write.table(all, paste(args[4], chrid, "end.tsv", sep = ""), quote = FALSE, sep = "\t", row.names = FALSE)
+		next
+	}
+
+	all <- all[order(as.numeric(all$ref_start)), ]
+
+	valid_query_chrs <- unique(all$query_chr[all$query_chr != "0" & !is.na(all$query_chr) & all$query_chr != ""])
+	if (length(valid_query_chrs) > 0) {
+		distance <- args[7]
+		for (chr_child in valid_query_chrs) {
+			sub_all <- all[all$query_chr == chr_child, , drop = FALSE]
+			if (nrow(sub_all) > 0) {
+				assign(chr_child, endfilter(sub_all, chrid, chr_child, distance))
+			}
+		}
+	}
+
+	data <- docall(all)
+
+	if (!is.null(data) && nrow(data) > 0) {
+		wrong_idx <- which(as.numeric(data$ref_start) > as.numeric(data$ref_end))
+		if (length(wrong_idx) > 0) data <- data[-wrong_idx, , drop = FALSE]
+
+		data <- distinct(data)
+
+		zero_idx <- which(data$reflen == 0 & data$querylen == 0)
+		if (length(zero_idx) > 0) data <- data[-zero_idx, , drop = FALSE]
+	}
+
+	COMPLEX <- data[data$anno == "COMPLEX" & !is.na(data$anno), , drop = FALSE]
+	if (nrow(COMPLEX) > 0) {
+		data <- data[data$anno != "COMPLEX" | is.na(data$anno), , drop = FALSE]
+		newcomplex <- complexinte(COMPLEX)
+		if (!is.null(newcomplex) && nrow(newcomplex) > 0) {
+			newcomplex$anno <- "SDR_COMPLEX"
+			newcomplex$orient <- "no"
+			newcomplex$reflen <- as.numeric(newcomplex$ref_end) - as.numeric(newcomplex$ref_start)
+			newcomplex$querylen <- as.numeric(newcomplex$query_end) - as.numeric(newcomplex$query_start)
+			newcomplex_cleaned <- align_and_sanitize(newcomplex, "newcomplex")
+			data <- rbind(data[, final_columns_order, drop = FALSE], newcomplex_cleaned)
+		}
+	}
+
+	if (nrow(data) > 0) {
+		data <- data[as.numeric(data$ref_start) <= as.numeric(data$ref_end) & 
+			as.numeric(data$query_start) <= as.numeric(data$query_end), , drop = FALSE]
+	}
+
+	if (exists("highdupall") && !is.null(highdupall) && nrow(highdupall) > 0) {
+		hidup <- highdupall[highdupall$ref_chr != "0" & !is.na(highdupall$ref_chr), , drop = FALSE]
+		if (nrow(hidup) > 0) {
+			hidup$query_chr <- ""
+			hidup$query_start <- ""
+			hidup$query_end <- ""
+			hidup$anno <- "high-dup"
+			hidup$orient <- ""
+			hidup$reflen <- ""
+			hidup$querylen <- ""
+			hidup_cleaned <- align_and_sanitize(hidup, "hidup")
+			data <- rbind(data[, final_columns_order, drop = FALSE], hidup_cleaned)
+		}
+	}
+
+	if (nrow(data) > 0) {
+		data <- data[!(data$ref_start == 0 & data$ref_end == 0), , drop = FALSE]
+		data <- data[!(data$query_start == 0 & data$query_end == 0), , drop = FALSE]
+	}
+
+	if (nrow(data) > 0) {
+		data <- data[, final_columns_order, drop = FALSE]
+		numeric_cols <- c("ref_start", "ref_end", "query_start", "query_end", "reflen", "querylen")
+		data[numeric_cols] <- lapply(data[numeric_cols], function(x) {
+			x_num <- as.numeric(x)
+			if (any(is.na(x_num) & !is.na(x))) warning("Numeric conversion generated NAs in final printout.")
+			format(x_num, scientific = FALSE, trim = TRUE, digits = 22)
+		})
+	} else {
+		data <- as.data.frame(matrix(ncol = length(final_columns_order), nrow = 0))
+		colnames(data) <- final_columns_order
+	}
+
+	write.table(data, paste(args[4], chrid, "end.tsv", sep = ""), quote = FALSE, sep = "\t", row.names = FALSE)
+
 }
 })
