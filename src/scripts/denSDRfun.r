@@ -254,19 +254,25 @@ docall<-function(data){
 ##----function extract inversion from cluster2
 ##!!!try to refine the breakpoints of inversions
 optimized_inversions <- list()
-inversion.extract<-function(invcluster,chrid){
+inversion.extract<-function(invcluster,chrid,refine_breakpoints){
   invcluster$query_start<-abs(invcluster$query_start)
   invcluster$query_end<-abs(invcluster$query_end)
-  inversion<-invcluster[invcluster$orient=="-",] %>% group_by(cluster)%>%  #cluster
-    summarise(ref_chr=ref_chr,ref_start=min(ref_start),
-              ref_end=max(ref_end),
-              query_chr=query_chr,
-              query_starttem=min(pmin(query_end,query_start)),
-              query_endtem=max(pmax(query_start,query_end)),
-              orient=(names(which.max(table(orient))))) 
+  inversion <- invcluster[invcluster$orient == "-", ] %>% 
+  	group_by(cluster, query_chr) %>%
+  	summarise(
+    	ref_chr = ref_chr[1],
+    	ref_start = min(ref_start),
+    	ref_end = max(ref_end),
+    	query_starttem = min(pmin(query_start, query_end)),
+    	query_endtem = max(pmax(query_start, query_end)),
+    	orient = names(which.max(table(orient))),
+    	.groups = "drop"
+  	)
+  inversion <- inversion[, c("cluster", "ref_chr", "ref_start", "ref_end", "query_chr", "query_starttem", "query_endtem")]
   colnames(inversion)[6]<-"query_start"
   colnames(inversion)[7]<-"query_end"
   inversion<-distinct(inversion) 
+  inversion$orient <- "-"
   #1.record + cluster
   write.table(invcluster[invcluster$orient == "+", c("ref_chr","ref_start","ref_end","ref_pos","query_chr","query_start","query_end","query_pos","orient","cluster")],
             file = "invcluster_forward.bed",
@@ -279,18 +285,14 @@ inversion.extract<-function(invcluster,chrid){
             file = "inversion_reverse.bed",
             quote = FALSE, sep = "\t", row.names = FALSE, col.names = FALSE)
   # 3.find overlap by bedtools intersect
-  system("bedtools intersect -a inversion_reverse.bed -b invcluster_forward.bed -wa -wb -f 0.1 > overlap.bed")
+  system("bedtools intersect -a inversion_reverse.bed -b invcluster_forward.bed -wa -wb -f 0.1 | awk '$4==$13' > overlap.bed")
   
   
   for (i in seq_len(nrow(inversion))) {
     b <- inversion[i, ]
     
     # 4.whether they have overlaps
-    if (file.info("overlap.bed")$size == 0) {
-      #breakpoints don't need to be refined, add to dataframe
-      optimized_inversions[[length(optimized_inversions) + 1]] <- b
-    } 
-    else {
+    if (refine_breakpoints && file.info("overlap.bed")$size != 0) {
       overlaps <- read.table("overlap.bed", header = FALSE, stringsAsFactors = FALSE, comment.char = "")
   
       #find this inversion overlap
@@ -381,6 +383,10 @@ inversion.extract<-function(invcluster,chrid){
           }
         } 
       }
+      else {
+      #breakpoints don't need to be refined, add to dataframe
+      optimized_inversions[[length(optimized_inversions) + 1]] <- b
+    } 
     }
 
   file.remove("invcluster_forward.bed")
@@ -390,6 +396,95 @@ inversion.extract<-function(invcluster,chrid){
   #combine results
   optimized_inversions_df <- do.call(rbind, optimized_inversions)
   return(optimized_inversions_df)
+}
+
+##call nested inversion
+call_nested_inversion <- function(invcluster, chrid){
+  invcluster$query_start<-abs(invcluster$query_start)
+  invcluster$query_end<-abs(invcluster$query_end)
+  inversion <- invcluster[invcluster$orient == "-", ] %>% 
+  	group_by(cluster, query_chr) %>%
+  	summarise(
+    	ref_chr = ref_chr[1],
+    	ref_start = min(ref_start),
+    	ref_end = max(ref_end),
+    	query_starttem = min(pmin(query_start, query_end)),
+    	query_endtem = max(pmax(query_start, query_end)),
+    	orient = names(which.max(table(orient))),
+    	.groups = "drop"
+  	)
+  synteny <- invcluster[invcluster$orient == "+", ] %>% 
+  	group_by(cluster, query_chr) %>%
+  	summarise(
+    	ref_chr = ref_chr[1],
+    	ref_start = min(ref_start),
+    	ref_end = max(ref_end),
+    	query_starttem = min(pmin(query_start, query_end)),
+    	query_endtem = max(pmax(query_start, query_end)),
+    	orient = names(which.max(table(orient))),
+    	.groups = "drop"
+  	)
+
+  if (nrow(inversion) != 0 && nrow(synteny) != 0) {
+    inversion$ref_pos <- (inversion$ref_start + inversion$ref_end) / 2
+    inversion$query_pos <- (inversion$query_starttem + inversion$query_endtem) / 2
+    inversion <- inversion[, c("ref_chr", "ref_start", "ref_end", "ref_pos", "query_chr", "query_starttem", "query_endtem", "query_pos", "orient", "cluster")]
+    colnames(inversion)[6:7] <- c("query_start", "query_end")
+    synteny$ref_pos <- (synteny$ref_start + synteny$ref_end) / 2
+    synteny$query_pos <- (synteny$query_starttem + synteny$query_endtem) / 2
+    synteny <- synteny[, c("ref_chr", "ref_start", "ref_end", "ref_pos", "query_chr", "query_starttem", "query_endtem", "query_pos", "orient", "cluster")]
+    colnames(synteny)[6:7] <- c("query_start", "query_end")
+    synteny$orient <- "-"
+    nestedcluster <- rbind(inversion, synteny)
+
+    clusternested <- split_region(nestedcluster, 1, invparas)
+
+    synteny_keys <- synteny %>%
+      select(ref_chr, ref_start, ref_end, query_chr, query_start, query_end) %>%
+      distinct() %>%
+      mutate(is_original_synteny = TRUE)
+
+    clusternested_marked <- clusternested %>%
+      left_join(synteny_keys, by = c("ref_chr", "ref_start", "ref_end", "query_chr", "query_start", "query_end")) %>%
+      mutate(is_original_synteny = if_else(is.na(is_original_synteny), FALSE, is_original_synteny))
+
+    max_ratio <- 2
+    final_nested_df <- clusternested_marked %>%
+      mutate(
+        row_ref_len = ref_end - ref_start,
+        row_query_len = query_end - query_start
+      ) %>%
+      group_by(cluster) %>%
+      filter(any(is_original_synteny == TRUE)) %>%
+      mutate(
+        total_ref_len = sum(row_ref_len),
+        total_query_len = sum(row_query_len)
+      ) %>%
+      filter(
+        is_original_synteny == TRUE,
+        row_ref_len <= 0.5 * total_ref_len,
+        row_query_len <= 0.5 * total_query_len
+      ) %>%
+      ungroup() %>%
+      filter(
+        pmax(row_ref_len, row_query_len) / pmin(row_ref_len, row_query_len) <= max_ratio
+      ) %>%
+      mutate(`anno` = "INV-INV") %>%
+      mutate(`orient` = "+") %>%
+      select(
+        ref_chr,
+        ref_start,
+        ref_end,
+        query_chr,
+        query_start,
+        query_end,
+        `anno`,
+        orient
+      )
+  } else {
+    final_nested_df <- NULL
+  }
+  return(final_nested_df)
 }
 
 ## merge inversion
@@ -956,6 +1051,7 @@ repeat.integrate<-function(data,repeatid){
 #-------------------function7 merge results ----------------------
 endfilter<-function(all,chrid,chr_child,distance){
   data<-all
+  #data <- exchange(data)
   data$reflen<-data$ref_end-data$ref_start
   data$querylen<-data$query_end-data$query_start
   distance <- as.integer(distance)
@@ -1261,7 +1357,7 @@ detect_translocations <- function(endcluster0,
   endcluster0_filtered <- endcluster0 %>% filter(!cluster %in% dellist)
   
   return(list(tran = tran_summary, endcluster0 = endcluster0_filtered, tranbefore = tran_rows))
-}                             
+}
 
 clusterall<-function(data){
   data<-data %>% group_by(cluster)%>%  
