@@ -3,7 +3,7 @@
 # -*- coding: us-ascii -*-
 """
 Created on Thurs April 3 10:56 2025
-Modified on Sun Jan 25 19:59 2026
+Modified on Sun June 24 16:04 2026
 @Author: Feifei Zhou
 @Author_email: zhoufeifei@sjtu.edu.cn
 """
@@ -15,7 +15,7 @@ import shutil
 import argparse
 import subprocess
 from pathlib import Path
-from utils import process_paf, run_minimap, process_filtering, run_cluster_and_call, run_cigar_processing, run_dup_filtering, generate_vcf, split_vcf, integrate_results, plot, pair, reverse
+from utils import process_paf, run_minimap, process_filtering, run_cluster_and_call, run_cigar_processing, run_dup_filtering, generate_vcf, integrate_results, plot, pair, reverse
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 def check_file_exists(file_path):
@@ -50,7 +50,7 @@ def LGvar(args):
     final_paf_file = f"align_hap1.final.paf"
     if not check_file_exists(final_paf_file):
         try:
-            process_filtering("hap1", args.mode, args.cluster, args.dellength, args.centromere, args.telomere)
+            process_filtering("hap1", args.mode, args.divergence)
         except Exception as e:
             logging.error(f"Error in process_filtering for hap1: {e}")
             sys.exit(1)
@@ -78,7 +78,7 @@ def LGvar(args):
         final_paf_file = f"align_hap2.final.paf"
         if not check_file_exists(final_paf_file):
             try:
-                process_filtering("hap2", args.mode, args.cluster, args.dellength, args.centromere, args.telomere)
+                process_filtering("hap2", args.mode, args.divergence)
             except Exception as e:
                 logging.error(f"Error in process_filtering for hap2: {e}")
                 sys.exit(1)
@@ -88,7 +88,7 @@ def LGvar(args):
     sdrall_file = Path(f"denSDRhap1")/"SDRall_final.txt"
     if not check_file_exists(sdrall_file):
         try:
-            run_cluster_and_call(args.ref, args.hap1, "hap1", args.invcluster, args.threads, args.chunk_size, args.distance, args.fraction)
+            run_cluster_and_call(args.ref, args.hap1, "hap1", args.cluster, args.invcluster, args.threads, args.chunk_size, args.distance, args.fraction, args.refine_breakpoints)
         except Exception as e:
             logging.error(f"Error in run_cluster_and_call for hap1: {e}")
             sys.exit(1)
@@ -97,7 +97,7 @@ def LGvar(args):
         sdrall_file = Path(f"denSDRhap2")/"SDRall_final.txt"
         if not check_file_exists(sdrall_file):
             try:
-                run_cluster_and_call(args.ref, args.hap2, "hap2", args.invcluster, args.threads, args.chunk_size, args.distance, args.fraction)
+                run_cluster_and_call(args.ref, args.hap2, "hap2", args.cluster, args.invcluster, args.threads, args.chunk_size, args.distance, args.fraction, args.refine_breakpoints)
             except Exception as e:
                 logging.error(f"Error in run_cluster_and_call for hap2: {e}")
                 sys.exit(1)
@@ -122,7 +122,6 @@ def LGvar(args):
 
     ## Dup filter
     cigarout_file = Path(f"half")/"hap1cigarout.txt"
-    cigarend_file = Path(f"half")/"hap1cigarend.txt"
     if not check_file_exists(cigarout_file):
         try:
             run_dup_filtering("hap1")
@@ -132,7 +131,6 @@ def LGvar(args):
 
     if args.hap2:
         cigarout_file = Path(f"half")/"hap2cigarout.txt"
-        cigarend_file = Path(f"half")/"hap2cigarend.txt"
         if not check_file_exists(cigarout_file):
             try:
                 run_dup_filtering("hap2")
@@ -142,40 +140,21 @@ def LGvar(args):
 
     ## Generate vcf and bed
     logging.info("3.Generate")
-    vcf_file = Path(f"results") / f"hap1cigarsdr.vcf"
+    vcf_file = Path(f"results") / f"LGvarhap1.vcf"
     if not check_file_exists(vcf_file):
         try:
-            generate_vcf(args.ref, args.hap1, "hap1", args.variant_type)
+            generate_vcf(args.ref, args.hap1, "hap1", "all")
         except Exception as e:
             logging.error(f"Error in generate_vcf for hap1: {e}")
             sys.exit(1)
 
     if args.hap2:
-        vcf_file = Path(f"results") / f"hap2cigarsdr.vcf"
+        vcf_file = Path(f"results") / f"LGvarhap2.vcf"
         if not check_file_exists(vcf_file):
             try:
-                generate_vcf(args.ref, args.hap2, "hap2", args.variant_type)
+                generate_vcf(args.ref, args.hap2, "hap2", "all")
             except Exception as e:
                 logging.error(f"Error in generate_vcf for hap2: {e}")
-                sys.exit(1)
-
-    hap_dir = Path(f"hap1")
-    split_check_file = hap_dir / "sortindel.vcf.gz"  
-    if not check_file_exists(split_check_file):
-        try:
-            split_vcf("hap1", args.variant_type)
-        except Exception as e:
-            logging.error(f"Error in split_vcf for hap1: {e}")
-            sys.exit(1)
-
-    if args.hap2:
-        hap_dir = Path(f"hap2")
-        split_check_file = hap_dir / "sortindel.vcf.gz"  
-        if not check_file_exists(split_check_file):
-            try:
-                split_vcf("hap2", args.variant_type)
-            except Exception as e:
-                logging.error(f"Error in split_vcf for hap2: {e}")
                 sys.exit(1)
 
     if args.hap2:
@@ -184,7 +163,7 @@ def LGvar(args):
         vcf_files = list(result_dir.glob("sortLGvar_*.vcf"))
         if not vcf_files:
             try:
-                integrate_results("hap1", "hap2", args.sample_name, args.max_distance, args.small_distance, args.similarity_threshold, args.variant_type)
+                integrate_results("hap1", "hap2", args.sample_name, args.max_distance, args.small_distance, args.similarity_threshold, "all")
             except Exception as e:
                 logging.error(f"Error in integrate_results: {e}")
                 sys.exit(1)
@@ -201,19 +180,14 @@ def main():
     r"\033[38;5;97m║   \033[38;5;220m██║     ██║   ██║║██  ██╔╝██╔══██║██╔══██╗\033[38;5;97m   ║\033[0m",
     r"\033[38;5;97m║   \033[38;5;226m███████╗╚██████╔╝╚╗ ██ ╔╝ ██║  ██║██║  ██║\033[38;5;97m   ║\033[0m",
     r"\033[38;5;97m║   \033[38;5;46m╚══════╝ ╚═════╝  ╚════╝  ╚═╝  ╚═╝╚═╝  ╚═╝\033[38;5;97m   ║\033[0m",
-    r"\033[38;5;97m║                                                ║\033[0m",
     r"\033[38;5;97m║    \033[38;5;51m                L G V A R                \033[38;5;97m   ║\033[0m",
     r"\033[38;5;97m╚════════════════════════════════════════════════╝\033[0m"
     ]
-
+    
     for line in ascii_art:
         colored_line = line.replace(r"\033[", "\033[")
         print(colored_line)
 
-    print("\nLarge-Scale Genetic VARiation caller\n")
-    #print("\nRun command:")
-    #print("LGVAR -r ref.fa -q1 hap1.fa -q2 hap2.fa -p1 hap1.paf -p2 hap2.paf -cp1 PTR_hap1_pair.tsv -cp2 PTR_hap2_pair.tsv -cen chm13_cen.tsv -telo chm13_telo.tsv -m cts -s PTR\n")
-    
     class ElegantFormatter(argparse.HelpFormatter):
         def __init__(self, prog):
             super().__init__(prog, max_help_position=45, width=100)
@@ -223,6 +197,10 @@ def main():
             return ', '.join(action.option_strings)
 
     parser = argparse.ArgumentParser()
+    __version__ = "1.3.0"
+    parser = argparse.ArgumentParser(
+        description=f"Large-Scale Genetic VARiation caller | v{__version__}"
+    )
     subparsers = parser.add_subparsers(dest="command", help="Some subcommands")
 
     parser_run = subparsers.add_parser("run", help="Run SV identification", formatter_class=ElegantFormatter)
@@ -235,15 +213,14 @@ def main():
     required.add_argument('-cp1', '--pairs1', required=True, help='Homologous chromsome pairs of query genome (hap1) and reference.')
     required.add_argument('-cp2', '--pairs2', help='Homologous chromsome pairs of query genome (hap2) and reference.')
     required.add_argument('-c', '--cluster', type=int, default=200000, help='Clustering parameter for filtering chaos alignments, where a smaller value results in a stricter filter [200000].')
-    required.add_argument('-dl', '--dellength', type=int, default=300000, help='A desired deletion length for alignments, where a larger value enforces a stricter filter [300000].')
     required.add_argument('-inv', '--invcluster', type=int, default=700000, help='Clustering parameter for inversion calling [700000].')
-    required.add_argument('-cen', '--centromere', required=False, help='A centromere file which is used to filter out the alignment of complex regions that may not be well aligned [False].')
-    required.add_argument('-telo', '--telomere', required=False, help='A telomere file which is used to filter out the alignment of complex regions that may not be well aligned [False].')
-    required.add_argument('-m', '--mode', choices=['ctn', 'cts'], required=True,
-                        help='Analysis mode: ctn (do not remove centromere and telomere alignments) or cts (remove) [ctn].')
+    required.add_argument('-m', '--mode', choices=['sensitive', 'insensitive'], default="sensitive",
+                        help='Mode for handling high-divergence regions: sensitive=keep, insensitive=remove')
+    required.add_argument('-dv', '--divergence', type=float, default=0.05, 
+                      help='Regions with divergence higher than this threshold will be filtered out to improve speed and remove false positives from high-divergence regions')
     required.add_argument('-s', '--sample_name', type=str, default="SAMPLE", help='Sample name used to generate vcf.')
-    required.add_argument('-v', '--variant_type', type=str, default="all", help='Process line of each thread in inversion re-identification. [all]')
     personal = parser_run.add_argument_group("Personalized arguments")
+    personal.add_argument('-rf', '--refine_breakpoints', action='store_true', default=False, help='Refine inversion breakpoints: If this flag is set, more precise breaking points for inversions will be identified (recommended for higher accuracy). [default: False]')
     personal.add_argument('-d', '--distance', type=int, default=0, help='Parameters used to identify INS and DEL: Variations where the distance between the start and end positions of the REF or QUERY is less than (or equal with) d will be identified as SVs. A lower value indicates stricter criteria for SV identification [0bp].')
     personal.add_argument('-t', '--threads', type=int, default=4, help='Multi threads for inversion re-identification from SDR. [4]')
     personal.add_argument('-k', '--chunk_size', type=int, default=50, help='Process line of each thread in inversion re-identification. [50]')
