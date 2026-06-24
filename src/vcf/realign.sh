@@ -183,29 +183,29 @@ process_chunk() {
                 echo "ERROR: Failed to extract sequences for ${ref_chr}:${ref_start}-${ref_end}" >&2
             fi
 
-        # SDR_INS 
         elif [[ "${cols[6]}" == "SDR_INS" ]]; then
-            ref_chr="${cols[0]}"
-            ref_start="${cols[1]}"
+            query_chr="${cols[3]}"
+            query_start="${cols[4]}"
+            query_end="${cols[5]}"
             local ins_result="$chunk_tmpdir/ins.result"
 
-            awk -v chr="$ref_chr" '$6 == chr' "$paf_file" | cut -f6,8-9 | sort -k2,2n |
-            bedtools merge -i - -d 500 |  
-            bedtools closest -a <(echo -e "$ref_chr\t$ref_start\t$((ref_start+1))") -b - -D a |
-            awk -v OFS="\t" '{
-                dist_start = ($3 - $6) < 0 ? ($6 - $3) : ($3 - $6);
-                dist_end = ($3 - $7) < 0 ? ($7 - $3) : ($3 - $7);
-                min_dist = (dist_start < dist_end) ? dist_start : dist_end;
-                
-                if (min_dist <= 10) print "YES";
-                else print "NO";
+            awk -v chr="$query_chr" '$1 == chr {print $1"\t"$3"\t"$4}' "$paf_file" | \
+            bedtools coverage \
+                -a <(echo -e "$query_chr\t$query_start\t$query_end") \
+                -b - | \
+                awk '{
+                if ($7 <= 0.1) {
+                    print "YES"
+                } else {
+                    print "NO"
+                }
             }' > "$ins_result"
-            
+        
             if [[ -s "$ins_result" ]] && grep -q "YES" "$ins_result"; then
-                  printf "%s\n" "$(IFS=$'\t'; echo "${newline[*]}")" >> "$chunk_output"
-                  continue
+                printf "%s\n" "$(IFS=$'\t'; echo "${newline[*]}")" >> "$chunk_output"
+                continue
             else
-                  continue
+                continue
             fi
         fi
 
