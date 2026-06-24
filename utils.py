@@ -16,13 +16,17 @@ def run_minimap(ref_path, hap_path, hap_label, chrom_pair_file):
         "-cx", "asm20",
         "--secondary=no",
         "--eqx",
-        "-K", "8G",
-        "-s", "1000",
+        "-m 10000",
+        "-z 10000,50",
+        "-r 50000",
+        "--end-bonus=100",
+        "-O 5,56",
+        "-E 4,1",
+        "-B 5",
         ref_path,
         hap_path,
         "-o", f"align_{hap_label}.paf"
     ]
-    
     logging.info("0.Map")
     logging.info(f"Running minimap2 for {hap_label}...")
     
@@ -36,35 +40,44 @@ def run_minimap(ref_path, hap_path, hap_label, chrom_pair_file):
 
 def process_paf(paf_file, chrom_pair_file, hap_label):
     """2. Filter extra alignments"""
-    filter_script = Path(os.path.dirname(os.path.abspath(__file__))) / "src/pyFiles/one2multi_filter.py"
     middle_dir = Path("half")
     middle_dir.mkdir(exist_ok=True)
     p_c_chrlen_file = middle_dir/f"{hap_label}_chrlen.txt"
     output_file = f"align_{hap_label}.flt.paf"
     
-    cmd = [
-        "python", str(filter_script),
-        "-m", chrom_pair_file,  ## create automately
-        "-f", paf_file,
-        "-1", "6",
-        "-2", "1"
-    ]
+    # Read mapping
+    mapping = {}
+    with open(chrom_pair_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"): continue
+            key, value = line.split("\t")
+            mapping[key] = value.split(",")
     
+    # Filter PAF
     logging.info(f"Filtering PAF for {hap_label}...")
+    with open(paf_file, 'r') as fin, open(output_file, 'w') as fout:
+        for line in fin:
+            line = line.strip()
+            if not line or line.startswith("#"): continue
+            content = line.split("\t")
+            try:
+                if content[5] in mapping.keys() and content[0] in mapping[content[5]]:
+                    print(line, file=fout)
+            except Exception as e:
+                content = line.split(" ") 
+                if content[5] in mapping.keys() and content[0] in mapping[content[5]]:
+                    print(line, file=fout)
     
-    with open(output_file, 'w') as f:
-        result = subprocess.run(cmd, stdout=f, check=True)
-    
-    awk_cmd = [
-        "awk", "{print $6,$7,$1,$2}",
-        f"{output_file}"
-    ]
-    
-    with open(p_c_chrlen_file, 'w') as f:
-        subprocess.run(awk_cmd, stdout=f, check=True)
+    # Extract chrlen info
+    with open(output_file, 'r') as fin, open(p_c_chrlen_file, 'w') as fout:
+        for line in fin:
+            content = line.strip().split("\t")
+            if content:
+                print(f"{content[5]} {content[6]} {content[0]} {content[1]}", file=fout)
 
-def process_filtering(hap_label, mode, cluster, dellength, centromere, telomere):
-    """3. Filter centromere and telomere alignments"""
+def process_filtering(hap_label, mode, divergence):
+    """3. Filter high-divergence alignments"""
     nowdic = Path.cwd()
     middle_dir = Path("half")
     middle_dir.mkdir(exist_ok=True)
@@ -77,24 +90,18 @@ def process_filtering(hap_label, mode, cluster, dellength, centromere, telomere)
     # run scripts
     chaos_script = Path(os.path.dirname(os.path.abspath(__file__))) / "src/scripts/chaos_filt.r"
     
-    if mode == "ctn":
+    if mode == "insensitive":
         cmd = [
-            "Rscript", str(chaos_script),
-            str(p_c_chrlen_file), 
-            f"{str(saffire_dir)}/", 
-            f"align_{hap_label}.flt.paf", 
-            f"align_{hap_label}.final.paf",
-            str(cluster),
-            str(dellength),
-            str(mode)
+            "cp",
+            f"align_{hap_label}.flt.paf",
+            f"align_{hap_label}.final.paf"
         ]
         
-        logging.info(f"Running chaos filter for {hap_label} in ctn mode...")
         result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-    elif mode == "cts":
-        if centromere is None or telomere is None:
-            logging.error("Error: When using 'cts' mode, you must provide both --centromere and --telomere arguments.")
+    elif mode == "sensitive":
+        if divergence is None:
+            logging.error("Error: When using 'sensitive' mode, you must provide divergence argument.")
             sys.exit(1)
         cmd = [
             "Rscript", str(chaos_script),
@@ -102,19 +109,17 @@ def process_filtering(hap_label, mode, cluster, dellength, centromere, telomere)
             f"{str(saffire_dir)}/", 
             f"align_{hap_label}.flt.paf", 
             f"align_{hap_label}.final.paf",
-            str(cluster),
-            str(dellength),
             str(mode),
-            str(centromere), str(telomere)
+            str(divergence)
         ]
         
-        logging.info(f"Running chaos filter for {hap_label} in cts mode...")
+        logging.info(f"Running chaos filter for {hap_label} in 'sensitive' mode...")
         result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     cmd = f"awk 'BEGIN{{OFS=\"\\t\"}} {{print $6, $8, $9, ($8+$9)/2, $1, $3, $4, ($3+$4)/2, $5}}' align_{hap_label}.final.paf | sort -k1,1 -k2,2n > {output_file}"
     subprocess.run(cmd, shell=True, check=True)
 
-def run_cluster_and_call(ref_path, hap_path, hap_label, invcluster, threads, chunk_size, distance, fraction):
+def run_cluster_and_call(ref_path, hap_path, hap_label, cluster, invcluster, threads, chunk_size, distance, fraction, refine_breakpoints):
     """4. Cluster and SV calling"""
     
     denSDR_dir = Path(f"denSDR{hap_label}")
@@ -134,8 +139,10 @@ def run_cluster_and_call(ref_path, hap_path, hap_label, invcluster, threads, chu
         middle_dir/f"{hap_label}_syntenic.tsv",
         middle_dir/f"{hap_label}_chrlen.txt",
         f"{str(denSDR_dir)}/",
+        str(cluster),
         str(invcluster),
-        str(distance)
+        str(distance),
+        str(refine_breakpoints)   # this is TRUE or FALSE
     ]
     
     logging.info(f"SV calling for {hap_label}...")
@@ -162,12 +169,23 @@ def run_cluster_and_call(ref_path, hap_path, hap_label, invcluster, threads, chu
         "-c", str(chunk_size),
         "-p", f"align_{hap_label}.final.paf",
         "-f", str(fraction)
-        
     ]
     
     subprocess.run(cmd, check=True)
     logging.info(f"Inversion re-identification of {hap_label} finished")
-    #print(f"{hap_label} realign finished at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}", flush=True)
+
+    # restore local alignments
+    restore_script = Path(os.path.dirname(os.path.abspath(__file__))) / "src/pyFiles/restore_paf.py"
+    cmd = [
+        "python", str(restore_script),
+        middle_dir/f"minimap2.paf",
+        middle_dir/f"restore.paf",
+        hap_path,
+        ref_path
+    ]
+    subprocess.run(cmd, check=True)
+    subprocess.run(f"cat half/restore.paf >> align_{hap_label}.final.paf", shell=True, check=True)
+    logging.info(f"Restore local alignment of {hap_label} finished")
 
 def run_cigar_processing(ref_path, hap_path, hap_label):
     """ 5.extract variationas from CIGAR """
@@ -237,8 +255,8 @@ def generate_vcf(ref_path, hap_path, hap_label, variant_type):
 
     middle_dir = Path("half")
     middle_dir.mkdir(exist_ok=True)
-    cigar_to_vcf_script = Path(os.path.dirname(os.path.abspath(__file__))) / "src/vcf/cigar2vcf.sh"
-    py_script = Path(os.path.dirname(os.path.abspath(__file__))) / "src/pyFiles/SDR_vcf.py"
+    cigar_to_vcf_script = Path(os.path.dirname(os.path.abspath(__file__))) / "src/vcf/CIGAR2VCF.sh"
+    py_script = Path(os.path.dirname(os.path.abspath(__file__))) / "src/pyFiles/SDR2VCF.py"
     cigar_out_file = middle_dir/f"{hap_label}cigarout.txt"
     vcf_file = f"{results_dir}/LGvar{hap_label}.vcf"
     sdrall_final_file = f"denSDR{hap_label}/SDRall_final.txt"
@@ -262,23 +280,30 @@ def generate_vcf(ref_path, hap_path, hap_label, variant_type):
     logging.info(f"Generating VCF of {hap_label}...")
     subprocess.run(cmd, check=True)
 
-
-def split_vcf(hap_label, variant_type):
-    """8. split vcf"""
-    split_script = Path(os.path.dirname(os.path.abspath(__file__))) / "src/vcf/splitfile.sh"
-    hap_dir = Path(f"{hap_label}")
-    hap_dir.mkdir(exist_ok=True)
-    
-    cmd = [
+def integrate_results(hap1_dir, hap2_dir, sample_name, max_distance, small_distance, similarity_threshold, variant_type):
+    """8. Variants classification"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    split_script = Path(script_dir) / "src/vcf/splitfile.sh"
+    hap_dir_obj = Path("hap1")
+    hap_dir_obj.mkdir(exist_ok=True)
+    cmd1 = [
         "bash", str(split_script),
-        f"{str(hap_dir)}/",
-        f"results/LGvar{hap_label}.vcf",
+        f"{str(hap_dir_obj)}/",
+        "results/LGvarhap1.vcf",
         str(variant_type)
     ]
+    subprocess.run(cmd1, check=True)
 
-    subprocess.run(cmd, check=True)
+    hap_dir_obj2 = Path("hap2")
+    hap_dir_obj2.mkdir(exist_ok=True)
+    cmd2 = [
+        "bash", str(split_script),
+        f"{str(hap_dir_obj2)}/",
+        "results/LGvarhap2.vcf",
+        str(variant_type)
+    ]
+    subprocess.run(cmd2, check=True)
 
-def integrate_results(hap1_dir, hap2_dir, sample_name, max_distance, small_distance, similarity_threshold, variant_type):
     """9. merge two haplotypes' variation"""
     phenotype_script = Path(os.path.dirname(os.path.abspath(__file__))) / "src/pyFiles/phenotype.py"
     
