@@ -34,10 +34,37 @@ fi
 touch temp/duplicates.txt temp/intersect.txt
 cat temp/duplicates.txt temp/intersect.txt | sort -k1,1V -k2,2n -k3,3n > temp/mergedup.txt
 
-awk -F'[:-]' 'BEGIN {OFS="\t"}{print $0,$1,$2}' "$file" | \
-    awk '{OFS=FS="\t";print $0,$10+$2}' | nl > temp/cigartestin.txt
+awk -F'\t' '
+BEGIN { OFS="\t" }
+{
+    id = $1
+    if (!match(id, /:[0-9]+-[0-9]+_/)) {
+        next
+    }
 
-awk -v OFS='\t' 'NR>1 {print $10, $11, $12, $1, $2}' temp/cigartestin.txt > temp/cigartestin.bed
+    split_pos = RSTART + RLENGTH - 1
+    ref_part   = substr(id, 1, split_pos - 1)
+    query_part = substr(id, split_pos + 1)
+    if (match(ref_part, /:[0-9]+-[0-9]+$/)) {
+        ref_chrom = substr(ref_part, 1, RSTART - 1)
+        ref_coords = substr(ref_part, RSTART + 1)
+        split(ref_coords, ra, "-")
+        ref_start = ra[1]
+        ref_end   = ra[2]
+    } else {
+        next
+    }
+    if (match(query_part, /:[0-9]+-[0-9]+$/)) {
+        qry_chrom = substr(query_part, 1, RSTART - 1)
+        ref_coords_q = substr(query_part, RSTART + 1)
+        split(ref_coords_q, qa, "-")
+        qry_start = qa[1]
+        qry_end   = qa[2]
+    }
+    print $0, ref_chrom, ref_start, ref_end
+}' "$file" | nl > temp/cigartestin.txt
+
+awk -v OFS='\t' '{print $10, $11, $12, $1, $2}' temp/cigartestin.txt > temp/cigartestin.bed
 
 if [ -s temp/mergedup.txt ] && [ -s temp/cigartestin.bed ]; then
     bedtools intersect -a temp/mergedup.txt -b temp/cigartestin.bed -wa -wb > temp/overlaps.txt
