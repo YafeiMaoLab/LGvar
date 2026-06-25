@@ -59,13 +59,13 @@ def process_cigar(line):
             length = int(num_match.group(1))
             i += len(num_match.group(1)) 
 
-            #search cigar digit（=, X, D, I）
-            if i < len(cigar_str) and cigar_str[i] in '=XDI':
+            #search cigar digit（=/M, X, D, I）
+            if i < len(cigar_str) and cigar_str[i] in '=MXDI':
                 variant_type = cigar_str[i]
                 i += 1  ##move to the next pair
                 
                 ##1.match
-                if variant_type == '=':
+                if variant_type == '=' or variant_type == 'M':
                     ref_pos += length
                     query_pos += length
                     
