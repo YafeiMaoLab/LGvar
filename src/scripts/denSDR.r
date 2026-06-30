@@ -19,8 +19,6 @@ chrnames <- unique(pos$ref_chr)
 numeric_part <- as.numeric(gsub("\\D", "", chrnames))
 sorted_chrnames <- chrnames[order(numeric_part)] 
 
-# cluster0paras<-700000  
-# cluster1paras<-700000
 cluster0paras<-args[5]  
 cluster1paras<-args[5]
 invparas <- args[6]
@@ -231,7 +229,8 @@ for(chrid in sorted_chrnames){
   INV_INV <- call_nested_inversion(invcluster,chrid)
 
   refine_breakpoints <- as.logical(args[8]) 
-  inver <- inversion.extract(invcluster, chrid, refine_breakpoints = refine_breakpoints)
+  combine_inversion <- as.logical(args[9])
+  inver <- inversion.extract(invcluster, chrid, refine_breakpoints = refine_breakpoints, combine_inversion = combine_inversion)
   if (!is.null(inver) && nrow(inver) != 0) {
     colnames(inver)[8]="orient"
   } else {
@@ -346,10 +345,71 @@ for(chrid in sorted_chrnames){
     inversion<-rbind(inversion,inver)
     inversion<-distinct(inversion)
   }
-  
+
+  if(!is.null(inver) && dim(inver)[1]!=0){
+    inver<-inver[,colnames(inversion)]
+    inversion<-rbind(inversion,inver)
+    inversion<-distinct(inversion)
+  }
+ 
+  if (!is.null(inversion) && nrow(inversion) > 1) {
+    inversion$query_start <- abs(as.numeric(inversion$query_start))
+    inversion$query_end   <- abs(as.numeric(inversion$query_end))
+    inversion$ref_start   <- as.numeric(inversion$ref_start)
+    inversion$ref_end     <- as.numeric(inversion$ref_end)
+    
+    keep_indices <- c()
+    nested_overlap_cutoff <- 0.9 
+    
+    for (i in 1:nrow(inversion)) {
+      current_inv <- inversion[i, ]
+      current_len <- current_inv$ref_end - current_inv$ref_start
+      is_nested <- FALSE
+
+      if (is.na(current_len) || current_len <= 0) {
+        keep_indices <- c(keep_indices, i)
+        next
+      }
+      
+      for (j in 1:nrow(inversion)) {
+        if (i == j) next
+        target_inv <- inversion[j, ]
+        target_len <- target_inv$ref_end - target_inv$ref_start
+        
+        if (is.na(target_len) || target_len <= current_len) next
+
+        ref_overlap_start <- max(current_inv$ref_start, target_inv$ref_start)
+        ref_overlap_end   <- min(current_inv$ref_end, target_inv$ref_end)
+
+        que_overlap_start <- max(current_inv$query_start, target_inv$query_start)
+        que_overlap_end   <- min(current_inv$query_end, target_inv$query_end)
+        
+        if ((target_inv$ref_chr == current_inv$ref_chr) && (ref_overlap_end > ref_overlap_start) &&
+            (target_inv$query_chr == current_inv$query_chr) && (que_overlap_end > que_overlap_start)) {
+          
+          ref_overlap_len <- ref_overlap_end - ref_overlap_start
+          que_overlap_len <- que_overlap_end - que_overlap_start
+          current_q_len   <- current_inv$query_end - current_inv$query_start
+          
+          ref_overlap_ratio <- ref_overlap_len / current_len
+          que_overlap_ratio <- que_overlap_len / current_q_len
+
+          if (ref_overlap_ratio >= nested_overlap_cutoff && que_overlap_ratio >= nested_overlap_cutoff) {
+            is_nested <- TRUE
+            break 
+          }
+        }
+      }
+      if (!is_nested) {
+        keep_indices <- c(keep_indices, i)
+      }
+    }
+    inversion <- inversion[keep_indices, ]
+  }
+
   cat("Big cluster among:cluster num",dim(store)[1],"\n")  
   cat("inversion:",dim(inversion)[1]-1,"\n") 
-  cat("translocation:",dim(smalltrans)[1]-1,"\n") 
+  cat("translocation:",dim(smalltrans)[1]-1,"\n")
 
   endcluster1<-reverse_end$endcluster1
   
@@ -642,6 +702,7 @@ for(chrid in sorted_chrnames){
 		colnames(data) <- final_columns_order
 	}
 
+  data$anno[data$anno == "SDR_DUP" & data$orient == "-"] <- "SDR_INV"
 	write.table(data, paste(args[4], chrid, "end.tsv", sep = ""), quote = FALSE, sep = "\t", row.names = FALSE)
 
 }
