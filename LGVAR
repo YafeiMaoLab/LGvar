@@ -3,7 +3,7 @@
 # -*- coding: us-ascii -*-
 """
 Created on Thurs April 3 10:56 2025
-Modified on Sun June 24 16:04 2026
+Modified on Sun June 30 20:23 2026
 @Author: Feifei Zhou
 @Author_email: zhoufeifei@sjtu.edu.cn
 """
@@ -88,7 +88,7 @@ def LGvar(args):
     sdrall_file = Path(f"denSDRhap1")/"SDRall_final.txt"
     if not check_file_exists(sdrall_file):
         try:
-            run_cluster_and_call(args.ref, args.hap1, "hap1", args.cluster, args.invcluster, args.threads, args.chunk_size, args.distance, args.fraction, args.refine_breakpoints)
+            run_cluster_and_call(args.ref, args.hap1, "hap1", args.cluster, args.invcluster, args.threads, args.chunk_size, args.distance, args.fraction, args.refine_breakpoints, args.combine_inversion)
         except Exception as e:
             logging.error(f"Error in run_cluster_and_call for hap1: {e}")
             sys.exit(1)
@@ -97,7 +97,7 @@ def LGvar(args):
         sdrall_file = Path(f"denSDRhap2")/"SDRall_final.txt"
         if not check_file_exists(sdrall_file):
             try:
-                run_cluster_and_call(args.ref, args.hap2, "hap2", args.cluster, args.invcluster, args.threads, args.chunk_size, args.distance, args.fraction, args.refine_breakpoints)
+                run_cluster_and_call(args.ref, args.hap2, "hap2", args.cluster, args.invcluster, args.threads, args.chunk_size, args.distance, args.fraction, args.refine_breakpoints, args.combine_inversion)
             except Exception as e:
                 logging.error(f"Error in run_cluster_and_call for hap2: {e}")
                 sys.exit(1)
@@ -221,6 +221,7 @@ def main():
     required.add_argument('-s', '--sample_name', type=str, default="SAMPLE", help='Sample name used to generate vcf.')
     personal = parser_run.add_argument_group("Personalized arguments")
     personal.add_argument('-rf', '--refine_breakpoints', action='store_true', default=False, help='Refine inversion breakpoints: If this flag is set, more precise breaking points for inversions will be identified (recommended for higher accuracy). [default: False]')
+    personal.add_argument('-ci', '--combine_inversion', action='store_true', default=True, help='Combine adjacent inversions. [default: True]')
     personal.add_argument('-d', '--distance', type=int, default=0, help='Parameters used to identify INS and DEL: Variations where the distance between the start and end positions of the REF or QUERY is less than (or equal with) d will be identified as SVs. A lower value indicates stricter criteria for SV identification [0bp].')
     personal.add_argument('-t', '--threads', type=int, default=4, help='Multi threads for inversion re-identification from SDR. [4]')
     personal.add_argument('-k', '--chunk_size', type=int, default=50, help='Process line of each thread in inversion re-identification. [50]')
