@@ -253,147 +253,244 @@ docall<-function(data){
 
 ##----function extract inversion from cluster2
 ##!!!try to refine the breakpoints of inversions
-optimized_inversions <- list()
-inversion.extract<-function(invcluster,chrid,refine_breakpoints){
-  invcluster$query_start<-abs(invcluster$query_start)
-  invcluster$query_end<-abs(invcluster$query_end)
-  inversion <- invcluster[invcluster$orient == "-", ] %>% 
-  	group_by(cluster, query_chr) %>%
-  	summarise(
-    	ref_chr = ref_chr[1],
-    	ref_start = min(ref_start),
-    	ref_end = max(ref_end),
-    	query_starttem = min(pmin(query_start, query_end)),
-    	query_endtem = max(pmax(query_start, query_end)),
-    	orient = names(which.max(table(orient))),
-    	.groups = "drop"
-  	)
-  inversion <- inversion[, c("cluster", "ref_chr", "ref_start", "ref_end", "query_chr", "query_starttem", "query_endtem")]
-  colnames(inversion)[6]<-"query_start"
-  colnames(inversion)[7]<-"query_end"
-  inversion<-distinct(inversion) 
-  inversion$orient <- "-"
-  #1.record + cluster
-  write.table(invcluster[invcluster$orient == "+", c("ref_chr","ref_start","ref_end","ref_pos","query_chr","query_start","query_end","query_pos","orient","cluster")],
-            file = "invcluster_forward.bed",
-            quote = FALSE, sep = "\t", row.names = FALSE, col.names = FALSE)
-
-  # 2.record inversions
-  inversion_reordered <- inversion[, c(2:ncol(inversion), 1)]  #move the first column to the end so we can do overlap
-
-  write.table(inversion_reordered,
-            file = "inversion_reverse.bed",
-            quote = FALSE, sep = "\t", row.names = FALSE, col.names = FALSE)
-  # 3.find overlap by bedtools intersect
-  system("bedtools intersect -a inversion_reverse.bed -b invcluster_forward.bed -wa -wb -f 0.1 | awk '$4==$13' > overlap.bed")
+inversion.extract <- function(invcluster, chrid, refine_breakpoints, 
+                              combine_inversion,       
+                              max_intercept_diff = 5000000, 
+                              max_gap = 5000000,
+                              max_forward_ratio = 0.3,
+                              max_len_diff_ratio = 0.3) { 
   
+  invcluster$query_start <- abs(invcluster$query_start)
+  invcluster$query_end <- abs(invcluster$query_end)
+
+  forward_blocks <- invcluster[invcluster$orient == "+", ]
+
+  cluster_features <- invcluster[invcluster$orient == "-", ] %>%
+    group_by(cluster, query_chr, ref_chr) %>%
+    summarise(
+      r_min = min(ref_start),
+      r_max = max(ref_end),
+      q_min = min(pmin(query_start, query_end)),
+      q_max = max(pmax(query_start, query_end)),
+      intercept = ((r_min + q_max) + (r_max + q_min)) / 2,
+      .groups = "drop"
+    ) %>%
+    arrange(r_min) 
+
+  if (combine_inversion && nrow(cluster_features) > 1) {
+    cluster_features$merged_cluster <- cluster_features$cluster
+    
+    for (i in 1:(nrow(cluster_features) - 1)) {
+      c1 <- cluster_features[i, ]
+      
+      for (j in (i + 1):nrow(cluster_features)) {
+        c2 <- cluster_features[j, ]
+        
+        if (c1$ref_chr == c2$ref_chr && c1$query_chr == c2$query_chr) {
+          
+          intercept_diff <- abs(c1$intercept - c2$intercept)
+          position_gap <- c2$r_min - c1$r_max 
+
+          if (intercept_diff <= max_intercept_diff && position_gap <= max_gap) {
+
+            pred_r_start <- c1$r_min
+            pred_r_end   <- max(c1$r_max, c2$r_max)
+            total_r_len  <- pred_r_end - pred_r_start
+            
+            overlap_r_forwards <- forward_blocks %>%
+              filter(ref_chr == c1$ref_chr & ref_end >= pred_r_start & ref_start <= pred_r_end)
+            
+            if (nrow(overlap_r_forwards) > 0) {
+              r_overlap_lengths <- pmin(overlap_r_forwards$ref_end, pred_r_end) - pmax(overlap_r_forwards$ref_start, pred_r_start)
+              forward_ratio_r <- sum(r_overlap_lengths) / total_r_len
+            } else {
+              forward_ratio_r <- 0
+            }
+
+            pred_q_start <- min(c1$q_min, c2$q_min)
+            pred_q_end   <- max(c1$q_max, c2$q_max)
+            total_q_len  <- pred_q_end - pred_q_start
+            
+            overlap_q_forwards <- forward_blocks %>%
+              filter(query_chr == c1$query_chr & pmax(query_start, query_end) >= pred_q_start & pmin(query_start, query_end) <= pred_q_end)
+            
+            if (nrow(overlap_q_forwards) > 0) {
+              overlap_q_forwards$q_lblk_min <- pmin(overlap_q_forwards$query_start, overlap_q_forwards$query_end)
+              overlap_q_forwards$q_lblk_max <- pmax(overlap_q_forwards$query_start, overlap_q_forwards$query_end)
+              
+              q_overlap_lengths <- pmin(overlap_q_forwards$q_lblk_max, pred_q_end) - pmax(overlap_q_forwards$q_lblk_min, pred_q_start)
+              forward_ratio_q <- sum(q_overlap_lengths) / total_q_len
+            } else {
+              forward_ratio_q <- 0
+            }
+
+            if (forward_ratio_r >= max_forward_ratio || forward_ratio_q >= max_forward_ratio) {
+              next
+            }
+
+            if (c2$q_max > c1$q_max) {
+              next
+            }
+
+            merged_ref_len <- max(c1$r_max, c2$r_max) - min(c1$r_min, c2$r_min)
+            merged_que_len <- max(c1$q_max, c2$q_max) - min(c1$q_min, c2$q_min)
+            
+            min_len <- min(merged_ref_len, merged_que_len)
+            len_diff <- abs(merged_ref_len - merged_que_len)
+            
+            if ((len_diff / min_len) > max_len_diff_ratio) {
+              next
+            }
+            
+            cluster_features$merged_cluster[cluster_features$cluster == c2$cluster] <- c1$merged_cluster
+            c1$r_max <- max(c1$r_max, c2$r_max)
+            c1$q_min <- min(c1$q_min, c2$q_min)
+            c1$q_max <- max(c1$q_max, c2$q_max)
+            c1$intercept <- (c1$intercept + c2$intercept) / 2
+            
+            cluster_features[i, ] <- c1
+          }
+        }
+      }
+    }
+    
+    cluster_map <- cluster_features %>% select(cluster, merged_cluster)
+    invcluster_reverse <- invcluster[invcluster$orient == "-", ] %>%
+      left_join(cluster_map, by = "cluster")
+    
+  } else {
+    invcluster_reverse <- invcluster[invcluster$orient == "-", ]
+    if (nrow(invcluster_reverse) > 0) {
+      invcluster_reverse$merged_cluster <- invcluster_reverse$cluster
+    }
+  }
+  
+  if (nrow(invcluster_reverse) == 0) {
+    return(data.frame())
+  }
+
+  inversion <- invcluster_reverse %>% 
+    group_by(merged_cluster, query_chr) %>%
+    summarise(
+      ref_chr = ref_chr[1],
+      ref_start = min(ref_start),
+      ref_end = max(ref_end),
+      query_starttem = min(pmin(query_start, query_end)),
+      query_endtem = max(pmax(query_start, query_end)),
+      orient = names(which.max(table(orient))),
+      .groups = "drop"
+    )
+  
+  colnames(inversion)[1] <- "cluster" 
+  inversion <- inversion[, c("cluster", "ref_chr", "ref_start", "ref_end", "query_chr", "query_starttem", "query_endtem")]
+  colnames(inversion)[6] <- "query_start"
+  colnames(inversion)[7] <- "query_end"
+  inversion <- distinct(inversion) 
+  inversion$orient <- "-"
+
+  if (nrow(inversion) > 1) {
+    keep_indices <- c()
+    for (i in 1:nrow(inversion)) {
+      current_inv <- inversion[i, ]
+      is_nested <- FALSE
+      
+      for (j in 1:nrow(inversion)) {
+        if (i == j) next
+        target_inv <- inversion[j, ]
+
+        ref_nested <- (target_inv$ref_chr == current_inv$ref_chr) && 
+                      (target_inv$ref_start <= current_inv$ref_start) && 
+                      (target_inv$ref_end >= current_inv$ref_end)
+        
+        que_nested <- (target_inv$query_chr == current_inv$query_chr) && 
+                      (target_inv$query_start <= current_inv$query_start) && 
+                      (target_inv$query_end >= current_inv$query_end)
+                      
+        target_len <- (target_inv$ref_end - target_inv$ref_start)
+        current_len <- (current_inv$ref_end - current_inv$ref_start)
+        
+        if (ref_nested && que_nested && (target_len > current_len)) {
+          is_nested <- TRUE
+          break 
+        }
+      }
+      if (!is_nested) {
+        keep_indices <- c(keep_indices, i)
+      }
+    }
+    inversion <- inversion[keep_indices, ]
+  }
+
+  if (nrow(inversion) == 0) {
+    return(data.frame())
+  }
+
+  optimized_inversions <- list()
+  
+  write.table(invcluster[invcluster$orient == "+", c("ref_chr","ref_start","ref_end","ref_pos","query_chr","query_start","query_end","query_pos","orient","cluster")],
+              file = "invcluster_forward.bed", quote = FALSE, sep = "\t", row.names = FALSE, col.names = FALSE)
+  
+  inversion_reordered <- inversion[, c(2:ncol(inversion), 1)]  
+  write.table(inversion_reordered, file = "inversion_reverse.bed", quote = FALSE, sep = "\t", row.names = FALSE, col.names = FALSE)
+  
+  system("bedtools intersect -a inversion_reverse.bed -b invcluster_forward.bed -wa -wb -f 0.1 | awk '$4==$13' > overlap.bed")
   
   for (i in seq_len(nrow(inversion))) {
     b <- inversion[i, ]
-    
-    # 4.whether they have overlaps
     if (refine_breakpoints && file.info("overlap.bed")$size != 0) {
       overlaps <- read.table("overlap.bed", header = FALSE, stringsAsFactors = FALSE, comment.char = "")
-  
-      #find this inversion overlap
-      current_overlaps <- overlaps %>%
-        filter(overlaps$V1 == b$ref_chr & overlaps$V2 == b$ref_start & overlaps$V3 == b$ref_end)
+      current_overlaps <- overlaps %>% filter(overlaps$V1 == b$ref_chr & overlaps$V2 == b$ref_start & overlaps$V3 == b$ref_end)
       current_overlaps <- current_overlaps[order(current_overlaps$V11 - current_overlaps$V10, decreasing = TRUE), ]
+      
       if (nrow(current_overlaps) > 1){
-        update_ref_start = 0
-        update_ref_end = 0
-        update_que_start = 0
-        update_que_end = 0
+        update_ref_start = 0; update_ref_end = 0; update_que_start = 0; update_que_end = 0
         for (j in seq_len(nrow(current_overlaps))) {
-            a <- current_overlaps[j, ]
-            #look for whether both breakpoint need to be refined
-            if (a$V10 <= b$ref_start) {
-              if (a$V11 >= b$ref_end) {
-                optimized_inversions[[length(optimized_inversions) + 1]] <- b
-                break
-                }
-              else {
-                #(1)inversion_start >= forward align start
-                update_ref_start = a$V11 #refine inversion ref_start as plus align ref end
-                update_que_start = a$V15 #refine inversion que_start as plus align que end
-              }
-            } else if (a$V10 >= b$ref_start) {
-              #(2)inversion_start <= forward align start
-              update_ref_end = a$V10  #refine inversion ref_end as plus align ref start
-              update_que_end = a$V14  #refine inversion ref_end as plus align que start
-            } 
-          }
-          refine_ref_start <- ifelse(update_ref_start != 0, update_ref_start, b$ref_start)
-          refine_ref_end <- ifelse(update_ref_end != 0, update_ref_end, b$ref_end)
-          refine_que_start <- ifelse(update_que_start != 0, update_que_start, b$query_start)
-          refine_que_end <- ifelse(update_que_end != 0, update_que_end, b$query_end)
-
-          optimized_inversions[[length(optimized_inversions) + 1]] <- data.frame(
-              cluster = b$cluster,
-              ref_chr = b$ref_chr,
-              ref_start = refine_ref_start,  
-              ref_end = refine_ref_end,
-              query_chr = b$query_chr,
-              query_start = refine_que_start,
-              query_end = refine_que_end,
-              orient = "-"
-            )
-      }
-      else if (nrow(current_overlaps) == 0){
+          a <- current_overlaps[j, ]
+          if (a$V10 <= b$ref_start) {
+            if (a$V11 >= b$ref_end) { optimized_inversions[[length(optimized_inversions) + 1]] <- b; break }
+            else { update_ref_start = a$V11; update_que_start = a$V15 }
+          } else if (a$V10 >= b$ref_start) { update_ref_end = a$V10; update_que_end = a$V14 } 
+        }
+        refine_ref_start <- ifelse(update_ref_start != 0, update_ref_start, b$ref_start)
+        refine_ref_end <- ifelse(update_ref_end != 0, update_ref_end, b$ref_end)
+        refine_que_start <- ifelse(update_que_start != 0, update_que_start, b$query_start)
+        refine_que_end <- ifelse(update_que_end != 0, update_que_end, b$query_end)
+        
+        optimized_inversions[[length(optimized_inversions) + 1]] <- data.frame(
+          cluster = b$cluster, ref_chr = b$ref_chr, ref_start = refine_ref_start, ref_end = refine_ref_end,
+          query_chr = b$query_chr, query_start = refine_que_start, query_end = refine_que_end, orient = "-"
+        )
+      } else if (nrow(current_overlaps) == 0){
         optimized_inversions[[length(optimized_inversions) + 1]] <- b
-      }
-      else {
+      } else {
         a = current_overlaps
         if (a$V10 <= b$ref_start) {
-            ##if the inversion is involved in the plus align, it's fake inversion, skip
-            if (a$V11 >= b$ref_end) {
-                optimized_inversions[[length(optimized_inversions) + 1]] <- b
-                }
-            else {
-            #only need to refine one breakpoint
+          if (a$V11 >= b$ref_end) { optimized_inversions[[length(optimized_inversions) + 1]] <- b }
+          else {
             optimized_inversions[[length(optimized_inversions) + 1]] <- data.frame(
-              cluster = b$cluster,
-              ref_chr = b$ref_chr,
-              ref_start = a$V11,  ##ref_start=overlap end
-              ref_end = b$ref_end,  
-              query_chr = b$query_chr,
-              query_start = a$V15, ##query_start=overlap end
-              query_end = b$query_end,
-              orient = "-"
+              cluster = b$cluster, ref_chr = b$ref_chr, ref_start = a$V11, ref_end = b$ref_end,  
+              query_chr = b$query_chr, query_start = a$V15, query_end = b$query_end, orient = "-"
             )
           }
-          } else if (a$V10 >= b$ref_start) {
-              ##if the inversion contains plus align, don't refine, add it to dataframe
-              if (a$V11 <= b$ref_end) {
-                optimized_inversions[[length(optimized_inversions) + 1]] <- b
-                }
-              else {
-                #only need to refine one breakpoint
-                optimized_inversions[[length(optimized_inversions) + 1]] <- data.frame(
-                  cluster = b$cluster,
-                  ref_chr = b$ref_chr,
-                  ref_start = b$ref_start,  
-                  ref_end = a$V10,  ##ref_end=overlap start
-                  query_chr = b$query_chr,
-                  query_start = b$query_start,
-                  query_end = a$V14, ##query_end=overlap start
-                  orient = "-"
-                )
-              }
+        } else if (a$V10 >= b$ref_start) {
+          if (a$V11 <= b$ref_end) { optimized_inversions[[length(optimized_inversions) + 1]] <- b }
+          else {
+            optimized_inversions[[length(optimized_inversions) + 1]] <- data.frame(
+              cluster = b$cluster, ref_chr = b$ref_chr, ref_start = b$ref_start, ref_end = a$V10,  
+              query_chr = b$query_chr, query_start = b$query_start, query_end = a$V14, orient = "-"
+            )
           }
-        } 
-      }
-      else {
-      #breakpoints don't need to be refined, add to dataframe
+        }
+      } 
+    } else {
       optimized_inversions[[length(optimized_inversions) + 1]] <- b
-    } 
-    }
-
-  file.remove("invcluster_forward.bed")
-  file.remove("inversion_reverse.bed")
-  file.remove("overlap.bed")
-
-  #combine results
+    }  
+  }
+  
+  if (file.exists("invcluster_forward.bed")) file.remove("invcluster_forward.bed")
+  if (file.exists("inversion_reverse.bed")) file.remove("inversion_reverse.bed")
+  if (file.exists("overlap.bed")) file.remove("overlap.bed")
+  
   optimized_inversions_df <- do.call(rbind, optimized_inversions)
   return(optimized_inversions_df)
 }
