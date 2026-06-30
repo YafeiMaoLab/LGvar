@@ -119,7 +119,7 @@ def process_filtering(hap_label, mode, divergence):
     cmd = f"awk 'BEGIN{{OFS=\"\\t\"}} {{print $6, $8, $9, ($8+$9)/2, $1, $3, $4, ($3+$4)/2, $5}}' align_{hap_label}.final.paf | sort -k1,1 -k2,2n > {output_file}"
     subprocess.run(cmd, shell=True, check=True)
 
-def run_cluster_and_call(ref_path, hap_path, hap_label, cluster, invcluster, threads, chunk_size, distance, fraction, refine_breakpoints):
+def run_cluster_and_call(ref_path, hap_path, hap_label, cluster, invcluster, threads, chunk_size, distance, fraction, refine_breakpoints, combine_inversion):
     """4. Cluster and SV calling"""
     
     denSDR_dir = Path(f"denSDR{hap_label}")
@@ -142,7 +142,8 @@ def run_cluster_and_call(ref_path, hap_path, hap_label, cluster, invcluster, thr
         str(cluster),
         str(invcluster),
         str(distance),
-        str(refine_breakpoints)   # this is TRUE or FALSE
+        str(refine_breakpoints),   # this is TRUE or FALSE
+        str(combine_inversion)
     ]
     
     logging.info(f"SV calling for {hap_label}...")
