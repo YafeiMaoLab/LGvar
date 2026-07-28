@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lgvar"
+version = "1.4.0"
+description = "LGvar is a comprehensive toolset designed for large-scale structural variant (SV) detection based on genome assemblies. It excels in cross-species variant identification, particularly demonstrating superior performance in inversion detection compared to existing tools."
+keywords = ["structural variations", "assemblies", "large-scale"]
+readme = "README.md"
+authors = [
+    { name = "Feifei Zhou", email = "zhoufeifei@sjtu.edu.cn" }
+]
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.8"
+
+[project.urls]
+Homepage = "https://github.com/YafeiMaoLab/LGvar"
+
+[project.scripts]
+LGVAR = "lgvar.lgvar_cli:main"
+
+[tool.setuptools]
+packages = ["lgvar"]
+
+package-dir = {"lgvar" = "."}
+
+[tool.setuptools.package-data]
+"lgvar" = [
+    "src/**/*",
+    "environment.yml",
+    "LGVAR"
+]
