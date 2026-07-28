@@ -3,7 +3,7 @@
 # -*- coding: us-ascii -*-
 """
 Created on Thurs April 3 10:56 2025
-Modified on Sun June 30 20:23 2026
+Modified on Tue July 28 21:28 2026
 @Author: Feifei Zhou
 @Author_email: zhoufeifei@sjtu.edu.cn
 """
@@ -197,7 +197,7 @@ def main():
             return ', '.join(action.option_strings)
 
     parser = argparse.ArgumentParser()
-    __version__ = "1.3.0"
+    __version__ = "1.4.0"
     parser = argparse.ArgumentParser(
         description=f"Large-Scale Genetic VARiation caller | v{__version__}"
     )
