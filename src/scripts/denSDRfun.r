@@ -1799,3 +1799,158 @@ highdupregion<-function(pos.chr){
   }
   
 }
+
+
+filter_and_refine_sdr <- function(data, paf_file, max_overlap = 0.5, distance) {
+  tmp_dir <- "temp"
+  if (!dir.exists(tmp_dir)) {
+    dir.create(tmp_dir, showWarnings = FALSE, recursive = TRUE)
+  }
+  ref_size_tmp <- file.path(tmp_dir, "ref_sizes.tmp")
+  query_size_tmp <- file.path(tmp_dir, "query_sizes.tmp")
+  ref_aln_bed <- file.path(tmp_dir, "ref_aln.bed")
+  query_aln_bed <- file.path(tmp_dir, "query_aln.bed")
+  ref_cov_gt0_bed <- file.path(tmp_dir, "ref_cov_gt0.bed")
+  query_cov_gt0_bed <- file.path(tmp_dir, "query_cov_gt0.bed")
+  
+  a_ref_bed <- file.path(tmp_dir, "a_ref.bed")
+  a_query_bed <- file.path(tmp_dir, "a_query.bed")
+
+  if (!(file.exists(ref_size_tmp) && file.info(ref_size_tmp)$size > 0)) {
+    system(paste0("awk '{print $6\"\t\"$7}' ", paf_file, " | sort -V | uniq > ", ref_size_tmp))
+  }
+  if (!(file.exists(query_size_tmp) && file.info(query_size_tmp)$size > 0)) {
+    system(paste0("awk '{print $1\"\t\"$2}' ", paf_file, " | sort -V | uniq > ", query_size_tmp))
+  }
+  
+  system(paste0("awk 'BEGIN{OFS=\"\t\"}{print $6, $8, $9}' ", paf_file, " | sort -k1,1 -k2,2n > ", ref_aln_bed))
+  system(paste0("awk 'BEGIN{OFS=\"\t\"}{print $1, $3, $4}' ", paf_file, " | sort -k1,1 -k2,2n > ", query_aln_bed))
+  
+  system(paste0("bedtools genomecov -bga -i ", ref_aln_bed, " -g ", ref_size_tmp, " | awk 'BEGIN{OFS=\"\t\"} $4 > 0 {print $1,$2,$3}' > ", ref_cov_gt0_bed))
+  system(paste0("bedtools genomecov -bga -i ", query_aln_bed, " -g ", query_size_tmp, " | awk 'BEGIN{OFS=\"\t\"} $4 > 0 {print $1,$2,$3}' > ", query_cov_gt0_bed))
+
+  data$row_id <- seq_len(nrow(data))
+  
+  target_types <- c("SDR_INS", "SDR_DEL", "SDR_NM")
+  orig_cols <- colnames(data)
+
+  check_idx <- data[[7]] %in% target_types
+  check_rows <- data[check_idx, ]
+  keep_rows  <- data[!check_idx, ]
+  
+  if (nrow(check_rows) == 0) {
+    data$row_id <- NULL
+    return(data)
+  }
+
+  sdr_ref <- check_rows[, c(1, 2, 3, ncol(data))]
+  sdr_query <- check_rows[, c(4, 5, 6, ncol(data))]
+  
+  write.table(sdr_ref, a_ref_bed, sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+  write.table(sdr_query, a_query_bed, sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+  cmd_ref <- paste0("bedtools subtract -a ", a_ref_bed, " -b ", ref_cov_gt0_bed)
+  cmd_query <- paste0("bedtools subtract -a ", a_query_bed, " -b ", query_cov_gt0_bed)
+  
+  sub_ref_lines <- system(cmd_ref, intern = TRUE)
+  sub_query_lines <- system(cmd_query, intern = TRUE)
+  
+  parse_subtraction <- function(lines) {
+    if (length(lines) == 0) {
+      return(data.frame(row_id=numeric(0), rem_start=numeric(0), rem_end=numeric(0), rem_len=numeric(0)))
+    }
+    df <- read.table(text = lines, sep="\t", stringsAsFactors=FALSE)
+    library(dplyr)
+    res <- df %>%
+      mutate(segment_len = V3 - V2) %>%
+      group_by(row_id = V4) %>%
+      filter(segment_len == max(segment_len)) %>% 
+      summarise(
+        rem_start = min(V2),
+        rem_end = max(V3),
+        rem_len = max(segment_len)
+      ) %>%
+      distinct(row_id, .keep_all = TRUE)
+    return(res)
+  }
+  
+  ref_remnants <- parse_subtraction(sub_ref_lines)
+  query_remnants <- parse_subtraction(sub_query_lines)
+
+  refined_list <- list()
+  deleted_count <- 0
+  refined_count <- 0
+  
+  for (i in seq_len(nrow(check_rows))) {
+    row <- check_rows[i, ]
+    rid <- row$row_id
+    orig_ref_len <- as.numeric(row[[3]]) - as.numeric(row[[2]])
+    orig_query_len <- as.numeric(row[[6]]) - as.numeric(row[[5]])
+
+    r_rem <- ref_remnants[ref_remnants$row_id == rid, ]
+    q_rem <- query_remnants[query_remnants$row_id == rid, ]
+
+    r_overlap_frac <- if(nrow(r_rem) > 0) (1 - (r_rem$rem_len / orig_ref_len)) else 1
+    q_overlap_frac <- if(nrow(q_rem) > 0) (1 - (q_rem$rem_len / orig_query_len)) else 1
+
+    
+    if (!is.na(r_overlap_frac) && r_overlap_frac > max_overlap && !is.na(q_overlap_frac) && q_overlap_frac > max_overlap) {
+      deleted_count <- deleted_count + 1
+      next 
+    }
+
+    if ((!is.na(r_overlap_frac) && r_overlap_frac > max_overlap) || (!is.na(q_overlap_frac) && q_overlap_frac > max_overlap)) {
+      refined_count <- refined_count + 1
+      if (nrow(r_rem) > 0) {
+        row[[2]] <- r_rem$rem_start
+        row[[3]] <- r_rem$rem_end
+      } else {
+        row[[3]] <- row[[2]] 
+      }
+      
+      if (nrow(q_rem) > 0) {
+        row[[5]] <- q_rem$rem_start
+        row[[6]] <- q_rem$rem_end
+      } else {
+        row[[6]] <- row[[5]]
+      }
+
+      if (row[[2]] > row[[3]]) row[[3]] <- row[[2]]
+      if (row[[5]] > row[[6]]) row[[6]] <- row[[5]]
+      row[[9]]  <- as.numeric(row[[3]]) - as.numeric(row[[2]])
+      row[[10]] <- as.numeric(row[[6]]) - as.numeric(row[[5]])
+    }
+    refined_list[[length(refined_list) + 1]] <- row
+  }
+
+  if (length(refined_list) > 0) {
+    checked_output <- do.call(rbind, refined_list)
+    final_data <- rbind(keep_rows, checked_output)
+  } else {
+    final_data <- keep_rows
+  }
+
+  final_data <- final_data[order(final_data$row_id), orig_cols]
+
+  idx_SDR_NM <- which(final_data[[7]] == "SDR_NM")
+  idx_SV_NM  <- which(final_data[[7]] == "SV_NM")
+
+  distance <- as.integer(distance)
+  final_data[,9] <- as.integer(final_data[,9])
+  final_data[,10] <- as.integer(final_data[,10])
+  if(length(idx_SDR_NM) > 0){
+    idx_sdr_ins <- idx_SDR_NM[final_data[idx_SDR_NM, 9] <= distance & final_data[idx_SDR_NM, 9] < final_data[idx_SDR_NM, 10]]
+    idx_sdr_del <- idx_SDR_NM[final_data[idx_SDR_NM, 10] <= distance & final_data[idx_SDR_NM, 10] < final_data[idx_SDR_NM, 9]]
+    final_data[idx_sdr_ins, 7] <- "SDR_INS"
+    final_data[idx_sdr_del, 7] <- "SDR_DEL"
+  }
+  if(length(idx_SV_NM) > 0){
+    idx_sv_ins <- idx_SV_NM[final_data[idx_SV_NM, 9] == 0 & final_data[idx_SV_NM, 10] > 0]
+    idx_sv_del <- idx_SV_NM[final_data[idx_SV_NM, 10] == 0 & final_data[idx_SV_NM, 9] > 0]
+    final_data[idx_sv_ins, 7] <- "SV_INS"
+    final_data[idx_sv_del, 7] <- "SV_DEL"
+  }
+
+  final_data$row_id <- NULL
+  return(final_data)
+}
