@@ -1,0 +1,5 @@
+include LGVAR
+include environment.yml
+include utils.py
+include lgvar_cli.py
+recursive-include src *
