@@ -703,7 +703,15 @@ for(chrid in sorted_chrnames){
 	}
 
   data$anno[data$anno == "SDR_DUP" & data$orient == "-"] <- "SDR_INV"
-	write.table(data, paste(args[4], chrid, "end.tsv", sep = ""), quote = FALSE, sep = "\t", row.names = FALSE)
+  paf_file = args[10]
+  filtered_data <- filter_and_refine_sdr(
+      data = data, 
+      paf_file = paf_file, 
+      max_overlap = 0.5,
+      distance = args[7]
+  )
+  write.table(filtered_data, paste(args[4], chrid, "end.tsv", sep = ""), quote = FALSE, sep = "\t", row.names = FALSE)
+
 
 }
 })
