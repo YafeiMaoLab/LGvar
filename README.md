@@ -1,5 +1,6 @@
 # LGvar: Large-scale Genomic VARiation
-[![Conda version](https://img.shields.io/badge/conda-v1.3.0-green)](https://anaconda.org/channels/zhoufeifei/packages/lgvar/overview)  [![Appatiner Image Version](https://img.shields.io/badge/singularity-v1.3.0-blue)](https://cloud.sylabs.io/library/feifeizhou/tool/lgvar) [![License](https://img.shields.io/badge/license-MIT-yellow)](https://github.com/YafeiMaoLab/LGvar/blob/main/LICENSE)  [![release](https://img.shields.io/badge/releases-June%202026-purple)](https://github.com/YafeiMaoLab/LGvar/releases/tag/v1.3.0)
+[![PyPI version](https://badge.fury.io/py/lgvar.svg)](https://pypi.org/project/lgvar/)
+[![Conda version](https://img.shields.io/badge/conda-v1.4.0-green)](https://anaconda.org/channels/zhoufeifei/packages/lgvar/overview)  [![Appatiner Image Version](https://img.shields.io/badge/singularity-v1.4.0-blue)](https://cloud.sylabs.io/library/feifeizhou/tool/lgvar) [![License](https://img.shields.io/badge/license-MIT-yellow)](https://github.com/YafeiMaoLab/LGvar/blob/main/LICENSE)  [![release](https://img.shields.io/badge/releases-July%202026-purple)](https://github.com/YafeiMaoLab/LGvar/releases/tag/v1.4.0)
 
 ## Quick Start
 * [Why LGvar?](#WhyLGvar)
@@ -23,27 +24,39 @@
 
 ## Installation <a id="installation"></a>
 
-**Option 1: Conda (Recommended)**
+**Option 1: Pip (Recommended)**
+```Bash
+# You can install LGvar from pypi
+pip install lgvar==1.4.0
+# Then install the corresponding dependencies
+source setup.sh
+# Use
+LGVAR --help
+```
+**Option 2: Conda**
 
 ```Bash
 # You can install LGvar from anaconda.org
 conda install -c conda-forge -c bioconda lgvar
+# Use
+LGVAR --help
 ```
 ```Bash
 # Or you can directly create a new environment
 # Clone the repository  
 git clone https://github.com/YafeiMaoLab/LGvar.git 
-cd LGvar
 # Create and activate environment  
-conda env create -f env.yml  
-conda activate LGvar
+conda env create -f LGvar/environment.yml  
+conda activate LGVAR
+# Use
+LGvar/LGVAR --help
 ```
-**Option 2: Singularity**
+**Option 3: Singularity**
 ```Bash
-# If conda is not available, use our pre-built images:
-singularity pull library://feifeizhou/tool/lgvar:v1.3.0 
+# Here is our pre-built image:
+singularity pull library://feifeizhou/tool/lgvar:v1.4.0 
 # Execution example:  
-singularity exec lgvar_v1.3.0.sif /LGVAR/LGVAR [subcommands]
+singularity exec lgvar_v1.4.0.sif /LGVAR/LGVAR [subcommands]
 ```
 
 ## Usage & Examples <a id="Usage-Examples"></a>
@@ -152,7 +165,7 @@ singularity exec lgvar_v1.3.0.sif /LGVAR/LGVAR [subcommands]
     ![https://github.com/YafeiMaoLab/LGvar/images/alignment.png](https://github.com/YafeiMaoLab/LGvar/blob/main/images/alignment.png)
 
 ## Benchmarking<a id="benchmark"></a>
-* We benchmarked LGvar in many genomes include simulated, population and cross-species data (see forthcoming paper). See [Analysis.md](https://github.com/YafeiMaoLab/LGvar/blob/main/README.md):
+* We benchmarked LGvar in many genomes include simulated, population and cross-species data (see forthcoming paper). See [Analysis/Analysis.md](https://github.com/YafeiMaoLab/LGvar/blob/main/README.md):
 
 
 ## Getting help <a id="getting-help"></a>
