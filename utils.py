@@ -16,13 +16,8 @@ def run_minimap(ref_path, hap_path, hap_label, chrom_pair_file):
         "-cx", "asm20",
         "--secondary=no",
         "--eqx",
-        "-m 10000",
-        "-z 10000,50",
-        "-r 50000",
-        "--end-bonus=100",
-        "-O 5,56",
-        "-E 4,1",
-        "-B 5",
+        "-K", "8G",
+        "-s", "1000",
         ref_path,
         hap_path,
         "-o", f"align_{hap_label}.paf"
@@ -127,6 +122,7 @@ def run_cluster_and_call(ref_path, hap_path, hap_label, cluster, invcluster, thr
     #dotplot_dir = Path(f"dotplot{hap_label}")
     #dotplot_dir.mkdir(exist_ok=True)
     sdrall_file = denSDR_dir/"SDRall.txt"
+    paf_file = f"align_{hap_label}.final.paf"
     middle_dir = Path("half")
     middle_dir.mkdir(exist_ok=True)
     
@@ -143,7 +139,8 @@ def run_cluster_and_call(ref_path, hap_path, hap_label, cluster, invcluster, thr
         str(invcluster),
         str(distance),
         str(refine_breakpoints),   # this is TRUE or FALSE
-        str(combine_inversion)
+        str(combine_inversion),
+        paf_file
     ]
     
     logging.info(f"SV calling for {hap_label}...")
@@ -186,6 +183,7 @@ def run_cluster_and_call(ref_path, hap_path, hap_label, cluster, invcluster, thr
     ]
     subprocess.run(cmd, check=True)
     subprocess.run(f"cat half/restore.paf >> align_{hap_label}.final.paf", shell=True, check=True)
+    subprocess.run("rm -f temp/*.tmp", shell=True, check=True)
     logging.info(f"Restore local alignment of {hap_label} finished")
 
 def run_cigar_processing(ref_path, hap_path, hap_label):
@@ -383,5 +381,3 @@ def reverse(paf, reverse, genome, new_genome):
         new_genome
     ]
     subprocess.run(cmd, check=True)
-
-    
