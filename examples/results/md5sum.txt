@@ -1,0 +1,6 @@
+fe075a4b743ca3de176698aa3f0915f8  LGvarall.bed
+069d307b37f2c6e91dcd8df661f5d584  LGvarhap1.bed
+d190fe84ecc5fc9eb19cd18a43581756  LGvarhap1.vcf
+37290e36c3a563b966ea909633b28135  LGvarhap2.bed
+20bd28043771c317852f981de763b87f  LGvarhap2.vcf
+5e183c6234942e8e028a95b366c85572  sortLGvar_all.vcf
