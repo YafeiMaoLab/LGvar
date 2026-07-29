@@ -11,6 +11,11 @@ readme = "README.md"
 authors = [
     { name = "Feifei Zhou", email = "zhoufeifei@sjtu.edu.cn" }
 ]
+
+maintainers = [
+    { name = "Feifei Zhou", email = "zhoufeifei@sjtu.edu.cn" }
+]
+
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.8"
@@ -29,6 +34,8 @@ package-dir = {"lgvar" = "."}
 [tool.setuptools.package-data]
 "lgvar" = [
     "src/**/*",
+    "examples/**/*",
     "environment.yml",
-    "LGVAR"
+    "LGVAR",
+    "setup.sh"
 ]
