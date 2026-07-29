@@ -4,8 +4,8 @@
 
 ## Quick Start
 * [Why LGvar?](#WhyLGvar)
-* [Installation](#installation)
-* [Usage & Examples](#Usage-Examples)
+* [Installation & Examples](#installation)
+* [Usage](#Usage-Examples)
     * [Reverse-complement the genome](#reverse)
     * [Generate orthologous chromosome pairs](#pair)
     * [Whole genome SV identification](#run)
@@ -24,42 +24,75 @@
 
 ## Installation <a id="installation"></a>
 
+**If you are using an `osx-arm64` platform, you may install LGVAR via `Option 3` with singularity.**
+
+**If you are using an `linux-64` platform, we recommend you install LGVAR via `Option 1`.**
+
 **Option 1: Pip (Recommended)**
 ```Bash
 # You can install LGvar from pypi
 pip install lgvar==1.4.0
 # Then install the corresponding dependencies
-source setup.sh
-# Use
-LGVAR --help
+LGVAR setup --spawn
+conda activate LGVAR
+```
+
+Use provided example datasets to test, the `example/` folder is stored under the LGVAR installation directory.
+You can run `pip show lgvar` to retrieve this path, which typically follows the pattern: `*/anaconda3/lib/pythonX.X/site-packages/lgvar/examples/`.
+```Bash
+# Test
+LGVAR run \  
+    -r */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/genome/test.ref.fa \ 
+    -q1 */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/genome/test.hap1.fa \  
+    -q2 */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/genome/test.hap2.fa \  
+    -p1 */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/align/align_hap1.paf \  
+    -p2 */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/align/align_hap2.paf \
+    -cp1 */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/data/hap1.tsv \
+    -cp2 */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/data/hap2.tsv \
+    -m sensitive \
+    -s test
 ```
 **Option 2: Conda**
 
 ```Bash
-# You can install LGvar from anaconda.org
-conda install -c conda-forge -c bioconda lgvar
-# Use
-LGVAR --help
-```
-```Bash
 # Or you can directly create a new environment
 # Clone the repository  
+cd ${workdir}
 git clone https://github.com/YafeiMaoLab/LGvar.git 
 # Create and activate environment  
 conda env create -f LGvar/environment.yml  
 conda activate LGVAR
+
 # Use
-LGvar/LGVAR --help
+${workdir}/LGvar/LGVAR run \  
+    -r ${workdir}/examples/genome/test.ref.fa \ 
+    -q1 ${workdir}/examples/genome/test.hap1.fa \  
+    -q2 ${workdir}/examples/genome/test.hap2.fa \  
+    -p1 ${workdir}/examples/align/align_hap1.paf \  
+    -p2 ${workdir}/examples/align/align_hap2.paf \
+    -cp1 ${workdir}/examples/data/hap1.tsv \
+    -cp2 ${workdir}/examples/data/hap2.tsv \
+    -m sensitive \
+    -s test
 ```
 **Option 3: Singularity**
 ```Bash
 # Here is our pre-built image:
 singularity pull library://feifeizhou/tool/lgvar:v1.4.0 
 # Execution example:  
-singularity exec lgvar_v1.4.0.sif /LGVAR/LGVAR [subcommands]
+singularity exec lgvar_v1.4.0.sif /LGVAR/LGVAR run \
+    -r /LGVAR/examples/genome/test.ref.fa \ 
+    -q1 /LGVAR/examples/genome/test.hap1.fa \  
+    -q2 /LGVAR/examples/genome/test.hap2.fa \  
+    -p1 /LGVAR/examples/align/align_hap1.paf \  
+    -p2 /LGVAR/examples/align/align_hap2.paf \
+    -cp1 /LGVAR/examples/data/hap1.tsv \
+    -cp2 /LGVAR/examples/data/hap2.tsv \
+    -m sensitive \
+    -s test
 ```
 
-## Usage & Examples <a id="Usage-Examples"></a>
+## Usage<a id="Usage-Examples"></a>
 
 * LGvar provides several subcommands to streamline the genomic analysis pipeline:
     <details>
@@ -110,25 +143,6 @@ singularity exec lgvar_v1.4.0.sif /LGVAR/LGVAR [subcommands]
     ```
     Centromere and telomere coordinate files for `T2T-CHM13` are available under the `examples/data` directory, namely `chm13_cen.tsv` and `chm13_telo.tsv`.
 
-* Here is an running example. The test data is located in `examples/`. We'll use Human chromosome 21(T2T-CHM13) as reference and Chimpanzee (PTR) as query.
-    ```Bash
-    # 1. Setup working directory  
-    mkdir LGvar_work
-    # 2. Decompress test genomes  
-    cd examples/genome && gunzip *.gz  
-    cd LGvar_work
-    # 3. Execution (Example with existing PAF alignments)  
-    LGVAR run \  
-        -r /examples/genome/chr21.chm13.fa \ 
-        -q1 /examples/genome/chr21.ptr.hap1.fa \  
-        -q2 /examples/genome/chr21.ptr.hap2.fa \  
-        -p1 /examples/align/align_hap1.paf \  
-        -p2 /examples/align/align_hap2.paf \
-        -cp1 /examples/data/PTR_hap1_pairs.tsv \
-        -cp2 /examples/data/PTR_hap2_pairs.tsv \
-        -m sensitive \
-        -s PTR
-    ```
 
 **4\. Output Files <a id="output"></a>**
 
@@ -165,7 +179,7 @@ singularity exec lgvar_v1.4.0.sif /LGVAR/LGVAR [subcommands]
     ![https://github.com/YafeiMaoLab/LGvar/images/alignment.png](https://github.com/YafeiMaoLab/LGvar/blob/main/images/alignment.png)
 
 ## Benchmarking<a id="benchmark"></a>
-* We benchmarked LGvar in many genomes include simulated, population and cross-species data (see forthcoming paper). See [Analysis/Analysis.md](https://github.com/YafeiMaoLab/LGvar/blob/main/README.md):
+* We benchmarked LGvar in many genomes include simulated, population and cross-species data (see forthcoming paper). See [Analysis/Analysis.md](https://github.com/YafeiMaoLab/LGvar/blob/main/Analysis/Analysis.md):
 
 
 ## Getting help <a id="getting-help"></a>
