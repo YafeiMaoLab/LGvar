@@ -313,7 +313,7 @@ log "INFO" "Creating BED file..."
     fi
 
 } | awk 'OFS="\t" { print $1,$2,$3,$4,$5,$6,$7,$8 }' \
-  | sort | uniq | awk '$4=="SNV" || $4=="INS" || $4=="DEL" || $4=="INV" || $4=="DUP" || $4=="INV-INV" || $4=="HighDup" || $4=="TRANS" || $4=="SDR" || $4=="SDR_COMPLEX" || $4=="NA"'> "$bed_output"
+  | awk '$4=="SNV" || $4=="INS" || $4=="DEL" || $4=="INV" || $4=="DUP" || $4=="INV-INV" || $4=="HighDup" || $4=="TRANS" || $4=="SDR" || $4=="SDR_COMPLEX" || $4=="NA"' | sort -k1,1V -k2,2n | uniq > "$bed_output"
 
 # ==========================================================
 # 10. Fix hap2 GT if present
