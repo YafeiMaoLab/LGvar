@@ -1,6 +1,5 @@
 # LGvar: Large-scale Genomic VARiation
-[![PyPI version](https://badge.fury.io/py/lgvar.svg)](https://pypi.org/project/lgvar/)
-[![Conda version](https://img.shields.io/badge/conda-v1.4.0-green)](https://anaconda.org/channels/zhoufeifei/packages/lgvar/overview)  [![Appatiner Image Version](https://img.shields.io/badge/singularity-v1.4.0-blue)](https://cloud.sylabs.io/library/feifeizhou/tool/lgvar) [![Singularity pulls](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/feifeizhou/b0309fb1079cebf8331e24e74451f431/raw/lgvar-downloads.json)](https://cloud.sylabs.io/library/feifeizhou/tool/lgvar)[![License](https://img.shields.io/badge/license-MIT-yellow)](https://github.com/YafeiMaoLab/LGvar/blob/main/LICENSE)  [![release](https://img.shields.io/badge/releases-July%202026-purple)](https://github.com/YafeiMaoLab/LGvar/releases/tag/v1.4.0)
+[![Appatiner Image Version](https://img.shields.io/badge/singularity-v1.4.0-blue)](https://cloud.sylabs.io/library/feifeizhou/tool/lgvar) [![Singularity pulls](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/FeifeiZhou-288/b0309fb1079cebf8331e24e74451f431/raw/lgvar-downloads.json)](https://cloud.sylabs.io/library/feifeizhou/tool/lgvar) [![Conda version](https://img.shields.io/badge/conda-v1.4.0-green)](https://anaconda.org/channels/zhoufeifei/packages/lgvar/overview) [![License](https://img.shields.io/badge/license-MIT-yellow)](https://github.com/YafeiMaoLab/LGvar/blob/main/LICENSE)  [![release](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2FYafeiMaoLab%2FLGvar%2Freleases%2Flatest&query=%24.published_at&label=releases&color=purple&logo=github)](https://github.com/YafeiMaoLab/LGvar/releases/tag/v1.4.0) 
 
 ## Quick Start
 * [Why LGvar?](#WhyLGvar)
@@ -24,9 +23,7 @@
 
 ## Installation <a id="installation"></a>
 
-**If you are using an `osx-arm64` platform, you may install LGVAR via `Option 1` with singularity.**
-
-**If you are using an `linux-64` platform, we recommend you install LGVAR via `Option 1` or use conda.**
+****Because LGVAR requires several external software dependencies in addition to Python packages, we recommend running LGVAR using the Singularity/Apptainer container `(Option 1)` for a consistent and reproducible environment. Linux users may alternatively use Conda to create a dedicated environment and run LGVAR `(Option 2)`.****
 
 **Option 1: Singularity (Recommended)**
 ```Bash
