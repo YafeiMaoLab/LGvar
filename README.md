@@ -1,6 +1,6 @@
 # LGvar: Large-scale Genomic VARiation
 [![PyPI version](https://badge.fury.io/py/lgvar.svg)](https://pypi.org/project/lgvar/)
-[![Conda version](https://img.shields.io/badge/conda-v1.4.0-green)](https://anaconda.org/channels/zhoufeifei/packages/lgvar/overview)  [![Appatiner Image Version](https://img.shields.io/badge/singularity-v1.4.0-blue)](https://cloud.sylabs.io/library/feifeizhou/tool/lgvar) [![License](https://img.shields.io/badge/license-MIT-yellow)](https://github.com/YafeiMaoLab/LGvar/blob/main/LICENSE)  [![release](https://img.shields.io/badge/releases-July%202026-purple)](https://github.com/YafeiMaoLab/LGvar/releases/tag/v1.4.0)
+[![Conda version](https://img.shields.io/badge/conda-v1.4.0-green)](https://anaconda.org/channels/zhoufeifei/packages/lgvar/overview)  [![Appatiner Image Version](https://img.shields.io/badge/singularity-v1.4.0-blue)](https://cloud.sylabs.io/library/feifeizhou/tool/lgvar) [![Singularity pulls](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/feifeizhou/b0309fb1079cebf8331e24e74451f431/raw/lgvar-downloads.json)](https://cloud.sylabs.io/library/feifeizhou/tool/lgvar)[![License](https://img.shields.io/badge/license-MIT-yellow)](https://github.com/YafeiMaoLab/LGvar/blob/main/LICENSE)  [![release](https://img.shields.io/badge/releases-July%202026-purple)](https://github.com/YafeiMaoLab/LGvar/releases/tag/v1.4.0)
 
 ## Quick Start
 * [Why LGvar?](#WhyLGvar)
@@ -24,41 +24,36 @@
 
 ## Installation <a id="installation"></a>
 
-**If you are using an `osx-arm64` platform, you may install LGVAR via `Option 3` with singularity.**
+**If you are using an `osx-arm64` platform, you may install LGVAR via `Option 1` with singularity.**
 
-**If you are using an `linux-64` platform, we recommend you install LGVAR via `Option 1`.**
+**If you are using an `linux-64` platform, we recommend you install LGVAR via `Option 1` or use conda.**
 
-**Option 1: Pip (Recommended)**
+**Option 1: Singularity (Recommended)**
 ```Bash
-# You can install LGvar from pypi
-pip install lgvar==1.4.0
-# Then install the corresponding dependencies
-LGVAR setup --spawn
-conda activate LGVAR
-```
+# Here is our pre-built image:
+singularity pull library://feifeizhou/tool/lgvar:v1.4.0
 
-Use provided example datasets to test, the `example/` folder is stored under the LGVAR installation directory.
-You can run `pip show lgvar` to retrieve this path, which typically follows the pattern: `*/anaconda3/lib/pythonX.X/site-packages/lgvar/examples/`.
-```Bash
-# Test
-LGVAR run \  
-    -r */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/genome/test.ref.fa \ 
-    -q1 */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/genome/test.hap1.fa \  
-    -q2 */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/genome/test.hap2.fa \  
-    -p1 */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/align/align_hap1.paf \  
-    -p2 */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/align/align_hap2.paf \
-    -cp1 */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/data/hap1.tsv \
-    -cp2 */anaconda3/lib/pythonX.X/site-packages/lgvar/examples/data/hap2.tsv \
+# Execution example:  
+singularity exec lgvar_v1.4.0.sif /LGVAR/LGVAR run \
+    -r /LGVAR/examples/genome/test.ref.fa \ 
+    -q1 /LGVAR/examples/genome/test.hap1.fa \  
+    -q2 /LGVAR/examples/genome/test.hap2.fa \  
+    -p1 /LGVAR/examples/align/align_hap1.paf \  
+    -p2 /LGVAR/examples/align/align_hap2.paf \
+    -cp1 /LGVAR/examples/data/hap1.tsv \
+    -cp2 /LGVAR/examples/data/hap2.tsv \
     -m sensitive \
     -s test
 ```
+
 **Option 2: Conda**
 
 ```Bash
 # Or you can directly create a new environment
 # Clone the repository  
 cd ${workdir}
-git clone https://github.com/YafeiMaoLab/LGvar.git 
+git clone https://github.com/YafeiMaoLab/LGvar.git
+
 # Create and activate environment  
 conda env create -f LGvar/environment.yml  
 conda activate LGVAR
@@ -75,22 +70,7 @@ ${workdir}/LGvar/LGVAR run \
     -m sensitive \
     -s test
 ```
-**Option 3: Singularity**
-```Bash
-# Here is our pre-built image:
-singularity pull library://feifeizhou/tool/lgvar:v1.4.0 
-# Execution example:  
-singularity exec lgvar_v1.4.0.sif /LGVAR/LGVAR run \
-    -r /LGVAR/examples/genome/test.ref.fa \ 
-    -q1 /LGVAR/examples/genome/test.hap1.fa \  
-    -q2 /LGVAR/examples/genome/test.hap2.fa \  
-    -p1 /LGVAR/examples/align/align_hap1.paf \  
-    -p2 /LGVAR/examples/align/align_hap2.paf \
-    -cp1 /LGVAR/examples/data/hap1.tsv \
-    -cp2 /LGVAR/examples/data/hap2.tsv \
-    -m sensitive \
-    -s test
-```
+
 
 ## Usage<a id="Usage-Examples"></a>
 
