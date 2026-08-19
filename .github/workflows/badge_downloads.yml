@@ -1,0 +1,31 @@
+name: Update Singularity download count
+
+on:
+  schedule:
+    # 每天 00:00 UTC 自动运行
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}  # 也可以在 Actions 页面手动触发
+
+jobs:
+  update-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch download count from Sylabs Library API
+        run: |
+          set -euo pipefail
+          COUNT=$(curl -fsSL -H 'Accept: application/json' \
+            https://library.sylabs.io/v1/containers/feifeizhou/tool/lgvar \
+            | jq '.data.downloadCount')
+          echo "Download count: $COUNT"
+          echo "DOWNLOADS_COUNT=$COUNT" >> $GITHUB_ENV
+
+      - name: Write count to GitHub Gist (shields.io endpoint badge reads it)
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: b0309fb1079cebf8331e24e74451f431
+          filename: lgvar-downloads.json
+          label: singularity pulls
+          message: ${{ env.DOWNLOADS_COUNT }}
+          color: blue
+          namedLogo: singularity
