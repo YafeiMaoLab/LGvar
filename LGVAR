@@ -212,10 +212,10 @@ def main():
     required.add_argument('-p2', '--paf2', help='Alignment for haplotype2 (Which contains the CIGAR infomation) [Recommend mapping tool: minimap2].')
     required.add_argument('-cp1', '--pairs1', required=True, help='Homologous chromsome pairs of query genome (hap1) and reference.')
     required.add_argument('-cp2', '--pairs2', help='Homologous chromsome pairs of query genome (hap2) and reference.')
-    required.add_argument('-c', '--cluster', type=int, default=200000, help='Clustering parameter for filtering chaos alignments, where a smaller value results in a stricter filter [200000].')
+    required.add_argument('-c', '--cluster', type=int, default=500000, help='This parameter affects SDR calling. Based on benchmark testing, a value of 500 kbp is recommended [500000].')
     required.add_argument('-inv', '--invcluster', type=int, default=700000, help='Clustering parameter for inversion calling [700000].')
     required.add_argument('-m', '--mode', choices=['sensitive', 'insensitive'], default="sensitive",
-                        help='Mode for handling high-divergence regions: sensitive=keep, insensitive=remove')
+                        help='Mode for handling high-divergence regions: sensitive=remove, insensitive=keep')
     required.add_argument('-dv', '--divergence', type=float, default=0.05, 
                       help='Regions with divergence higher than this threshold will be filtered out to improve speed and remove false positives from high-divergence regions')
     required.add_argument('-s', '--sample_name', type=str, default="SAMPLE", help='Sample name used to generate vcf.')
