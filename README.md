@@ -166,4 +166,4 @@ ${workdir}/LGvar/LGVAR run \
 
 ## Citing LGvar <a id="citation"></a>
 
-* If you use LGvar in your research, please cite our repository (and forthcoming paper): (https://github.com/YafeiMaoLab/LGvar)
+* If you use LGvar in your research, please cite https://www.biorxiv.org/content/10.64898/2026.08.28.747789v1.full
