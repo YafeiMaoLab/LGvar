@@ -12,6 +12,7 @@
     * [Plot whole genome alignment synteny](#plot)
 * [Benchmarking](#benchmark)
 * [Getting Help](#getting-help)
+* [Downloads](#downloads)
 * [Citing LGvar](#citation)
 
 ## Why LGvar <a id="WhyLGvar"></a>
@@ -163,6 +164,10 @@ ${workdir}/LGvar/LGVAR run \
 
 * If you encounter any issues or have questions about specific parameters, please [Open an Issue](https://github.com/YafeiMaoLab/LGvar) or contact zhoufeifei@sjtu.edu.cn.
 
+## Sylabs Library — Archived Download Stats 📦 <a id="downloads"></a>
+1,913 downloads before the
+[Singularity Container Services End-of-Life](https://cloud.sylabs.io/)
+on **2026-10-22**.
 
 ## Citing LGvar <a id="citation"></a>
 
