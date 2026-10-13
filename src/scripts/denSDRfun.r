@@ -1859,7 +1859,7 @@ filter_and_refine_sdr <- function(data, paf_file, max_overlap = 0.5, distance) {
     if (length(lines) == 0) {
       return(data.frame(row_id=numeric(0), rem_start=numeric(0), rem_end=numeric(0), rem_len=numeric(0)))
     }
-    df <- read.table(text = lines, sep="\t", stringsAsFactors=FALSE)
+    df <- read.table(text = lines, sep="\t", stringsAsFactors=FALSE, comment.char = "")
     library(dplyr)
     res <- df %>%
       mutate(segment_len = V3 - V2) %>%
