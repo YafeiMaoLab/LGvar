@@ -23,7 +23,7 @@ jobs:
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
-          gistID: b0309fb1079cebf8331e24e74451f431
+          gistID: c3923889603b38de0be9655d8a4350ae
           filename: lgvar-downloads.json
           label: singularity pulls
           message: ${{ env.DOWNLOADS_COUNT }}
