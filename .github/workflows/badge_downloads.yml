@@ -1,4 +1,4 @@
-name: Update Singularity download count
+name: Update GHCR download count
 
 on:
   schedule:
@@ -10,14 +10,48 @@ jobs:
   update-badge:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch download count from Sylabs Library API
+      - name: Fetch download count from GHCR package page
         run: |
-          set -euo pipefail
-          COUNT=$(curl -fsSL -H 'Accept: application/json' \
-            https://library.sylabs.io/v1/containers/feifeizhou/tool/lgvar \
-            | jq '.data.downloadCount')
-          echo "Download count: $COUNT"
-          echo "DOWNLOADS_COUNT=$COUNT" >> $GITHUB_ENV
+          python3 - <<'PY'
+          import os, re, sys, urllib.request
+
+          URL = "https://github.com/YafeiMaoLab/LGvar/pkgs/container/lgvar"
+          req = urllib.request.Request(URL, headers={
+              "User-Agent": "Mozilla/5.0 (compatible; LGvar-stats/1.0)",
+              "Accept": "text/html,application/xhtml+xml",
+          })
+          try:
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  html = r.read().decode("utf-8", errors="replace")
+          except Exception as e:
+              print(f"::error::Failed to fetch GHCR page: {e}", file=sys.stderr)
+              sys.exit(1)
+
+          pattern = r'Total\s+downloads\s*</[^>]+>\s*<[^>]*title="(\d+)"[^>]*>'
+          match = re.search(pattern, html, re.DOTALL | re.IGNORECASE)
+
+          if not match:
+              pattern_fallback = r'Total\s+downloads.*?title="(\d+)"'
+              match = re.search(pattern_fallback, html, re.DOTALL | re.IGNORECASE)
+
+          if not match:
+              idx = html.lower().find("total downloads")
+              snippet = html[max(0, idx-200):idx+400] if idx != -1 else html[:500]
+              print("::error::Could not find download count in page HTML", file=sys.stderr)
+              print("---- HTML snippet ----", file=sys.stderr)
+              print(snippet, file=sys.stderr)
+              sys.exit(1)
+
+          count = match.group(1)
+          print(f"Download count: {count}")
+
+          env_file = os.environ.get("GITHUB_ENV")
+          if env_file:
+              with open(env_file, "a") as f:
+                  f.write(f"DOWNLOADS_COUNT={count}\n")
+          else:
+              print("GITHUB_ENV not set (running locally), skipping env write.")
+          PY
 
       - name: Write count to GitHub Gist (shields.io endpoint badge reads it)
         uses: schneegans/dynamic-badges-action@v1.7.0
@@ -25,7 +59,7 @@ jobs:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: c3923889603b38de0be9655d8a4350ae
           filename: lgvar-downloads.json
-          label: singularity pulls
+          label: GHCR pulls
           message: ${{ env.DOWNLOADS_COUNT }}
           color: blue
-          namedLogo: singularity
+          namedLogo: docker
